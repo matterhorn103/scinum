@@ -1,0 +1,15 @@
+[package]
+name = "scinum"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+num-traits = "0.2.19"
+regex = "1.12.2"
+rust_decimal_macros = "1.39.0"
+serde = "1.0.228"
+serde_with = "3.16.1"
+
+[dependencies.rust_decimal]
+version = "1.39.0"
+features = ["maths"]
