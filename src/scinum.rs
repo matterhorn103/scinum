@@ -835,15 +835,20 @@ impl FromStr for SciNum {
     type Err = SciNumError;
 
     /// Parses a string and attempts to create a corresponding `SciNum`.
+    /// 
     /// Does not currently support uncertainties.
+    /// 
+    /// For now goes via `rust_decimal::Decimal::from_str()`.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let re = Regex::new(r"^(-?\d+(?:[.,]\d+)?)(?:[eE]([+-]?\d+))?$").unwrap();
         let caps = re.captures(s).ok_or(SciNumError::Parse(s.into()))?;
         let number_str = caps.get(1).ok_or(SciNumError::Parse(s.into()))?.as_str();
-        let number = Decimal::try_from_str(number_str).map_err(|_e| SciNumError::Parse(s.into()))?;
+        let dec = Decimal::from_str(number_str).map_err(|_e| SciNumError::Parse(s.into()))?;
+        let mut num = SciNum::from(dec);
         let exponent_str = caps.get(2).map(|m| m.as_str()).unwrap_or("0");
         let exponent = i16::from_str(exponent_str).map_err(|_e| SciNumError::Parse(s.into()))?;
-        Ok(Self::new(number, exponent))
+        num.exponent += exponent;
+        Ok(num)
     }
 }
 
@@ -1283,20 +1288,20 @@ mod tests {
     #[test]
     fn sci_macro() {
         // Integer
-        assert_eq!(sci!(42), SciNum::new(dec!(42)));
+        assert_eq!(sci!(42), SciNum::new(42, 0));
         // Negative float
-        assert_eq!(sci!(-3.14), SciNum::new(dec!(-3.14)));
+        assert_eq!(sci!(-3.14), SciNum::from_scientific_parts(-3, 14, 0, 0));
         // Scientific notation
-        assert_eq!(sci!(1.5e8), SciNum::new(dec!(1.5e8)));
-        // TODO large exponent fails with overflow error
-        //assert_eq!(sci!(1.5e10), SciNum::new(dec!(1.5e10)));
+        assert_eq!(sci!(1.5e8), SciNum::new(15, 7));
+        // Scientific notation with large exponent
+        assert_eq!(sci!(1.5e10), SciNum::new(15, 9));
         // Scientific notation with negative exponent
-        assert_eq!(sci!(2e-5), SciNum::new(dec!(2e-5)));
+        assert_eq!(sci!(2e-5), SciNum::new(2, -5));
         // Negative number with positive exponent
-        assert_eq!(sci!(-6.022e6), SciNum::new(dec!(-6.022e6)));
-        // TODO large exponent fails with overflow error
-        //assert_eq!(sci!(-6.022e23), SciNum::new(dec!(-6.022e23)));
+        assert_eq!(sci!(-6.022e6), SciNum::new(-6022, 3));
+        // Negative number with large exponent
+        assert_eq!(sci!(-6.022e23), SciNum::new(-6022, 20));
         // Capital E for exponent
-        assert_eq!(sci!(1.5E8), SciNum::new(dec!(1.5E8)));
+        assert_eq!(sci!(1.5E8), SciNum::new(15, 7));
     }
 }
