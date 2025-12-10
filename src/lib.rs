@@ -1,2 +1,4 @@
-pub mod error;
-pub mod scinum;
+mod error;
+mod scinum;
+
+pub use scinum::SciNum;
