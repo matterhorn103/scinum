@@ -484,78 +484,60 @@ impl One for SciNum {
 
 impl From<Decimal> for SciNum {
     #[inline]
-    fn from(n: Decimal) -> Self {
-        let n = n.unpack();
-        // TODO: Handle gracefully when precision is too high
-        // (should just drop the excess)
-        let significand = if n.hi != 0 {
-            todo!()
-        } else {
-            (n.mid as u64) << 32 | n.lo as u64
-        };
-        Self {
-            negative: n.negative,
-            exponent: -(n.scale as i16), // Scale is max 28 so this is fine
-            uncertainty_scale: 0,
-            uncertainty: 0,
-            significand,
+    /// Converts a `rust_decimal::Decimal` to a `SciNum`.
+    /// 
+    /// A silent loss of precision will occur if the `Decimal` has more than 18
+    /// significant figures.
+    /// If this is the case, `n` is first rounded to 18 decimal places using
+    /// `Decimal.rescale()`; the rounding thus follows the
+    /// `rust_decimal::RoundingStrategy::MidpointAwayFromZero` strategy.
+    fn from(mut n: Decimal) -> Self {
+        if n.scale() > 18 {
+            n.rescale(18);
         }
+        // `n.hi` should now always be 0 and the significand should fit into a `u64`
+        let mantissa = n.mantissa();
+        // `n.scale()` is max 28 anyway, should be max 18 at this point
+        Self::new(mantissa, -(n.scale() as i16))
     }
 }
 
 impl TryFrom<SciNum> for Decimal {
-    type Error = SciNumError;
+    type Error = rust_decimal::Error;
 
-    fn try_from(n: SciNum) -> Result<Self, Self::Error> {
-        if n.exponent.is_positive() || (u32::from(n.exponent.unsigned_abs()) > Decimal::MAX_SCALE) {
-            Err(SciNumError::Cast("Decimal".to_string()))
+    /// Attempts to convert a `SciNum` into a `rust_decimal::Decimal`.
+    /// 
+    /// Fails if `n` has a positive exponent or an exponent lower than −28.
+    fn try_from(n: SciNum) -> Result<Decimal, rust_decimal::Error> {
+        if n.exponent.is_positive() {
+            Err(rust_decimal::Error::ConversionTo("Decimal".to_string()))
         } else {
-            Ok(Decimal::try_from_i128_with_scale(
+            Decimal::try_from_i128_with_scale(
                 n.significand_integral(),
                 n.exponent.unsigned_abs().into(),
-            ))
+            )
         }
     }
 }
 
-//impl FromPrimitive for Number {
-//    fn from_i64(n: i64) -> Option<Self> {
-//        Some(Self {
-//            number: n.into(),
-//            uncertainty: Decimal::ZERO,
-//        })
-//    }
-//
-//    fn from_u64(n: u64) -> Option<Self> {
-//        Some(Self {
-//            number: n.into(),
-//            uncertainty: Decimal::ZERO,
-//        })
-//    }
-//}
-
-macro_rules! impl_from {
+macro_rules! impl_from_int {
     ($T:ty) => {
         impl From<$T> for SciNum {
             fn from(t: $T) -> Self {
-                Self::new_exact(t)
+                Self::new(t.into(), 0)
             }
         }
     };
 }
 
-impl_from!(i8);
-impl_from!(i16);
-impl_from!(i32);
-impl_from!(i64);
-impl_from!(i128);
-impl_from!(isize);
-impl_from!(u8);
-impl_from!(u16);
-impl_from!(u32);
-impl_from!(u64);
-impl_from!(u128);
-impl_from!(usize);
+impl_from_int!(i8);
+impl_from_int!(i16);
+impl_from_int!(i32);
+impl_from_int!(i64);
+impl_from_int!(u8);
+impl_from_int!(u16);
+impl_from_int!(u32);
+impl_from_int!(u64);
 
 impl PartialEq for SciNum {
     fn eq(&self, other: &Self) -> bool {
@@ -942,46 +924,53 @@ pub mod dec {
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
-
+    
     #[test]
     fn new_from_int() {
-        let n = SciNum::new_with_uncertainty(20, 2, 0);
-        assert_eq!(n.number(), SciNum::new(20, 0));
-        assert_eq!(n.uncertainty(), SciNum::new(2, 0));
-    }
-
-    #[test]
-    fn new_exact_from_int() {
+        // Using new
         let n = SciNum::new(30, 0);
         assert_eq!(n.number(), SciNum::new(30, 0));
+        assert_eq!(n.uncertainty(), SciNum::new(0, 0));
+        // Using from
+        let n = SciNum::from(42);
+        assert_eq!(n.number(), SciNum::new(42, 0));
         assert_eq!(n.uncertainty(), SciNum::new(0, 0));
     }
 
     #[test]
+    fn new_from_int_with_uncertainty() {
+        let n = SciNum::new_with_uncertainty(20, 2, 0);
+        assert_eq!(n.number(), SciNum::from(20));
+        assert_eq!(n.uncertainty(), SciNum::new(2, 0));
+    }
+
+    #[test]
     fn new_from_dec() {
-        let n = SciNum::new_with_uncertainty(dec!(30), dec!(5));
-        assert_eq!(n.number(), SciNum::new_with_uncertainty(dec!(30), dec!(0)));
-        assert_eq!(
-            n.uncertainty(),
-            SciNum::new_with_uncertainty(dec!(5), dec!(0))
-        );
+        let n = SciNum::from(dec!(20));
+        assert_eq!(n.number(), SciNum::new(20, 0));
+        assert_eq!(n.number(), SciNum::from(dec!(20)));
+        assert_eq!(n.uncertainty(), SciNum::new(0, 0));
+        assert_eq!(n.uncertainty(), SciNum::from(dec!(0)));
     }
 
     #[test]
-    fn new_exact_from_dec() {
-        let n = SciNum::new(dec!(20));
-        assert_eq!(n.number(), SciNum::new(dec!(20)));
-        assert_eq!(n.uncertainty(), SciNum::new(dec!(0)));
-    }
+    fn from_scientific_parts() {
+        let n1 = SciNum::from_scientific_parts(67, 2, 0, 0); // 67.2
+        assert_eq!(n1.to_string(), "67.2");
+        assert_eq!(n1, SciNum::new(670, -1));
 
-    #[test]
-    fn exact_from_scientific_parts() {
-        let n = SciNum::new(67, 0);
-        assert_eq!(n, SciNum::new(dec!(67)));
-        let n2 = SciNum::new(236, 3);
-        assert_eq!(n2, SciNum::new(dec!(2.36e5)));
-        let n3 = SciNum::new(236, -6);
-        assert_eq!(n3, SciNum::new(dec!(2.36e-4)));
+        // Should always get at least one decimal place using this method
+        let n2 = SciNum::from_scientific_parts(672, 0, 0, 0); // 672.0
+        assert_eq!(n2.to_string(), "672.0");
+        assert_eq!(n2, SciNum::new(6720, -1));
+
+        let n3 = SciNum::from_scientific_parts(2, 36, 0, 5);
+        assert_eq!(n3.to_string(), "2.36e5");
+        assert_eq!(n3, SciNum::from(dec!(2.36e5)));
+
+        let n4 = SciNum::from_scientific_parts(23, 61, 0, -7);
+        assert_eq!(n4.to_string(), "2.361e-6");
+        assert_eq!(n4, SciNum::from(dec!(2.361e-6)));
     }
 
     #[test]
