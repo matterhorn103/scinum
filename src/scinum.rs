@@ -10,7 +10,6 @@ use std::{
 use num_traits::{FromPrimitive, Inv, Num, One, Pow, Zero};
 use regex::Regex;
 use rust_decimal::{Decimal, MathematicalOps};
-use rust_decimal_macros::dec;
 
 use crate::error::SciNumError;
 
@@ -32,7 +31,7 @@ use crate::error::SciNumError;
 pub struct SciNum {
     negative: bool,
     exponent: i16,
-    uncertainty_scale: u8,
+    uncertainty_scale: u8, // This will allow the uncertainty to have a different precision, but for the moment must always be 0
     uncertainty: u32,
     significand: u64,
 }
@@ -122,18 +121,28 @@ impl SciNum {
 
     /// Creates a new `SciNum` with the same number but the provided
     /// uncertainty.
+    /// 
+    /// # Panics
+    /// 
+    /// This function panics if the uncertainty has a significand greater than
+    /// `u32::MAX` (i.e. more than ~9 decimal places).
     ///
     /// # Example
     ///
     /// ```
     /// # use scinum::SciNum;
     /// #
-    /// let n = SciNum::new(251, -3).with_uncertainty(3);
+    /// let n = SciNum::new(251, -3).with_uncertainty(SciNum::new(3, -3));
     /// assert_eq!(n.to_string(), "0.251(3)");
     /// assert_eq!(n, SciNum::new_with_uncertainty(251, 3, -3));
     #[inline]
-    pub fn with_uncertainty(mut self, uncertainty: u32) -> Self {
-        self.uncertainty = uncertainty;
+    pub fn with_uncertainty(mut self, uncertainty: Self) -> Self {
+        let uncertainty_scale = self.exponent - uncertainty.exponent;
+        if uncertainty_scale != 0 {
+            todo!("Currently, an uncertainty must have the same precision as the number itself!")
+        } else {
+            self.uncertainty = uncertainty.significand.try_into().expect("The uncertainty may not have a significand greater than `u32::MAX`!");
+        }
         self
     }
 
@@ -304,82 +313,82 @@ impl SciNum {
     where
         T: Into<Decimal>,
     {
-        let sigma_ab = correlation.into()
-            * Decimal::try_from(self.uncertainty())
-            * Decimal::try_from(rhs.uncertainty());
-        let number = Decimal::try_from(self.number()) + Decimal::try_from(rhs.number());
-        let uncertainty = if self.is_exact() && rhs.is_exact() {
-            Decimal::ZERO
+        let number = Decimal::try_from(self.number()).unwrap() + Decimal::try_from(rhs.number()).unwrap();
+        if self.is_exact() && rhs.is_exact() {
+            Self::from(number)
         } else {
-            ((Decimal::try_from(self.uncertainty()).powu(2))
-                + (Decimal::try_from(rhs.uncertainty()).powu(2))
-                + (dec!(2) * sigma_ab))
+            let sigma_ab = correlation.into()
+                * Decimal::try_from(self.uncertainty()).unwrap()
+                * Decimal::try_from(rhs.uncertainty()).unwrap();
+            let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
+                + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2))
+                + (Decimal::TWO * sigma_ab))
                 .sqrt()
-                .unwrap()
-        };
-        Self::new_with_uncertainty(number, uncertainty)
+                .unwrap();
+            Self::from(number).with_uncertainty(uncertainty.into())
+        }
     }
 
     pub fn sub_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
     where
         T: Into<Decimal>,
     {
-        let sigma_ab = correlation.into()
-            * Decimal::try_from(self.uncertainty()).unwrap()
-            * Decimal::try_from(rhs.uncertainty()).unwrap();
         let number = Decimal::try_from(self.number()).unwrap() - Decimal::try_from(rhs.number()).unwrap();
-        let uncertainty = if self.is_exact() && rhs.is_exact() {
-            Decimal::ZERO
+        if self.is_exact() && rhs.is_exact() {
+            Self::from(number)
         } else {
-            ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
+            let sigma_ab = correlation.into()
+                * Decimal::try_from(self.uncertainty()).unwrap()
+                * Decimal::try_from(rhs.uncertainty()).unwrap();
+            let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
                 + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2))
-                - (dec!(2) * sigma_ab))
+                - (Decimal::TWO * sigma_ab))
                 .sqrt()
-                .unwrap()
-        };
-        Self::new_with_uncertainty(number, uncertainty)
+                .unwrap();
+            Self::from(number).with_uncertainty(uncertainty.into())
+        }
     }
 
     pub fn mul_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
     where
         T: Into<Decimal>,
     {
-        let sigma_ab = correlation.into()
-            * Decimal::try_from(self.uncertainty()).unwrap()
-            * Decimal::try_from(rhs.uncertainty()).unwrap();
         let number = Decimal::try_from(self.number()).unwrap() * Decimal::try_from(rhs.number()).unwrap();
-        let uncertainty = if self.is_exact() && rhs.is_exact() {
-            Decimal::ZERO
+        if self.is_exact() && rhs.is_exact() {
+            Self::from(number)
         } else {
-            ((Decimal::try_from(self.relative_uncertainty()).unwrap().powu(2))
+            let sigma_ab = correlation.into()
+                * Decimal::try_from(self.uncertainty()).unwrap()
+                * Decimal::try_from(rhs.uncertainty()).unwrap();
+            let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap().powu(2))
                 + (Decimal::try_from(rhs.relative_uncertainty()).unwrap().powu(2))
-                + (dec!(2) * sigma_ab / number))
+                + (Decimal::TWO * sigma_ab / number))
                 .sqrt()
                 .unwrap()
-                * number.abs()
-        };
-        Self::new_with_uncertainty(number, uncertainty)
+                * number.abs();
+            Self::from(number).with_uncertainty(uncertainty.into())
+        }
     }
 
     pub fn div_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
     where
         T: Into<Decimal>,
     {
-        let sigma_ab = correlation.into()
-            * Decimal::try_from(self.uncertainty()).unwrap()
-            * Decimal::try_from(rhs.uncertainty()).unwrap();
         let number = Decimal::try_from(self.number()).unwrap() / Decimal::try_from(rhs.number()).unwrap();
-        let uncertainty = if self.is_exact() && rhs.is_exact() {
-            Decimal::ZERO
+        if self.is_exact() && rhs.is_exact() {
+           Self::from(number)
         } else {
-            ((Decimal::try_from(self.relative_uncertainty()).unwrap().powu(2))
+            let sigma_ab = correlation.into()
+                * Decimal::try_from(self.uncertainty()).unwrap()
+                * Decimal::try_from(rhs.uncertainty()).unwrap();
+            let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap().powu(2))
                 + (Decimal::try_from(rhs.relative_uncertainty()).unwrap().powu(2))
-                - (dec!(2) * sigma_ab / number))
+                - (Decimal::TWO * sigma_ab / number))
                 .sqrt()
                 .unwrap()
-                * number.abs()
-        };
-        Self::new_with_uncertainty(number, uncertainty)
+                * number.abs();
+            Self::from(number).with_uncertainty(uncertainty.into())
+        }
     }
 
     #[inline]
@@ -410,44 +419,56 @@ impl SciNum {
     where
         T: Into<Decimal>,
     {
-        let sigma_ab = correlation.into()
-            * Decimal::try_from(self.uncertainty()).unwrap()
-            * Decimal::try_from(rhs.uncertainty()).unwrap();
         let number = Decimal::try_from(self.number()).unwrap().powd(Decimal::try_from(rhs.number()).unwrap());
-        let uncertainty = if self.is_exact() && rhs.is_exact() {
-            Decimal::ZERO
+        if self.is_exact() && rhs.is_exact() {
+            Self::from(number)
         } else {
-            ((Decimal::try_from(self.relative_uncertainty()).unwrap() * Decimal::try_from(rhs.number()).unwrap()).powu(2)
+            let sigma_ab = correlation.into()
+                * Decimal::try_from(self.uncertainty()).unwrap()
+                * Decimal::try_from(rhs.uncertainty()).unwrap();
+            let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap() * Decimal::try_from(rhs.number()).unwrap()).powu(2)
                 + (Decimal::try_from(self.number()).unwrap().ln() * Decimal::try_from(rhs.uncertainty()).unwrap()).powu(2)
-                + (dec!(2)
+                + (Decimal::TWO
                     * ((Decimal::try_from(self.number()).unwrap().ln() * Decimal::try_from(rhs.number()).unwrap())
                         / Decimal::try_from(self.number()).unwrap())
                     * sigma_ab))
                 .sqrt()
                 .unwrap()
-                * number.abs()
-        };
-        Self::new_with_uncertainty(number, uncertainty)
+                * number.abs();
+            Self::from(number).with_uncertainty(uncertainty.into())
+        }
     }
 
     pub fn ln(self) -> Self {
         let number = Decimal::try_from(self.number()).unwrap().ln();
-        let uncertainty = Decimal::try_from(self.relative_uncertainty()).unwrap().abs();
-        Self::new_with_uncertainty(number, uncertainty)
+        if self.is_exact() {
+            Self::from(number)
+        } else {
+            let uncertainty = Decimal::try_from(self.relative_uncertainty()).unwrap().abs();
+            Self::from(number).with_uncertainty(uncertainty.into())
+        }
     }
 
     pub fn log10(self) -> Self {
         let number = Decimal::try_from(self.number()).unwrap().log10();
-        let uncertainty = (Decimal::try_from(self.uncertainty()).unwrap()
-            / (Decimal::TEN.ln() * Decimal::try_from(self.number()).unwrap()))
-        .abs();
-        Self::new_with_uncertainty(number, uncertainty)
+        if self.is_exact() {
+            Self::from(number)
+        } else {
+            let uncertainty = (Decimal::try_from(self.uncertainty()).unwrap()
+                / (Decimal::TEN.ln() * Decimal::try_from(self.number()).unwrap()))
+            .abs();
+            Self::from(number).with_uncertainty(uncertainty.into())
+        }
     }
 
     pub fn exp(self) -> Self {
         let number = Decimal::try_from(self.number()).unwrap().exp();
-        let uncertainty = number.abs() * Decimal::try_from(self.uncertainty()).unwrap();
-        Self::new_with_uncertainty(number, uncertainty)
+        if self.is_exact() {
+            Self::from(number)
+        } else {
+            let uncertainty = number.abs() * Decimal::try_from(self.uncertainty()).unwrap();
+            Self::from(number).with_uncertainty(uncertainty.into())
+        }
     }
 }
 
@@ -456,7 +477,7 @@ impl Num for SciNum {
 
     fn from_str_radix(str: &str, radix: u32) -> Result<Self, rust_decimal::Error> {
         // For now, just make use of the Decimal implementation
-        let dec = Decimal::try_from_str_radix(str, radix)?;
+        let dec = Decimal::from_str_radix(str, radix)?;
         Ok(Self::from(dec))
     }
 }
@@ -541,7 +562,7 @@ impl_from_int!(u64);
 
 impl PartialEq for SciNum {
     fn eq(&self, other: &Self) -> bool {
-        Decimal::try_from(self.number()) == other.number_dec()
+        Decimal::try_from(*self).unwrap() == Decimal::try_from(*other).unwrap()
     }
 }
 
@@ -555,39 +576,9 @@ impl PartialOrd for SciNum {
 
 impl Ord for SciNum {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        Decimal::try_from(self.number()).cmp(&other.number_dec())
+        Decimal::try_from(*self).unwrap().cmp(&Decimal::try_from(*other).unwrap())
     }
 }
-
-macro_rules! impl_comparisons {
-    ($t:ty) => {
-        impl PartialEq<$t> for SciNum {
-            fn eq(&self, other: &$t) -> bool {
-                Decimal::try_from(self.number()) == Decimal::try_from(*other)
-            }
-        }
-
-        impl PartialOrd<$t> for SciNum {
-            fn partial_cmp(&self, other: &$t) -> Option<std::cmp::Ordering> {
-                Decimal::try_from(self.number()).partial_cmp(&Decimal::try_from(*other))
-            }
-        }
-    };
-}
-
-impl_comparisons!(i8);
-impl_comparisons!(i16);
-impl_comparisons!(i32);
-impl_comparisons!(i64);
-impl_comparisons!(i128);
-impl_comparisons!(isize);
-impl_comparisons!(u8);
-impl_comparisons!(u16);
-impl_comparisons!(u32);
-impl_comparisons!(u64);
-impl_comparisons!(u128);
-impl_comparisons!(usize);
-impl_comparisons!(Decimal);
 
 impl Add for SciNum {
     type Output = Self;
@@ -713,7 +704,7 @@ impl Inv for &SciNum {
     }
 }
 
-macro_rules! impl_arithmetic {
+macro_rules! impl_arithmetic_int {
     ($t:ty) => {
         impl Add<$t> for SciNum {
             type Output = SciNum;
@@ -785,18 +776,14 @@ macro_rules! impl_arithmetic {
     };
 }
 
-impl_arithmetic!(i8);
-impl_arithmetic!(i16);
-impl_arithmetic!(i32);
-impl_arithmetic!(i64);
-impl_arithmetic!(i128);
-impl_arithmetic!(isize);
-impl_arithmetic!(u8);
-impl_arithmetic!(u16);
-impl_arithmetic!(u32);
-impl_arithmetic!(u64);
-impl_arithmetic!(u128);
-impl_arithmetic!(usize);
+impl_arithmetic_int!(i8);
+impl_arithmetic_int!(i16);
+impl_arithmetic_int!(i32);
+impl_arithmetic_int!(i64);
+impl_arithmetic_int!(u8);
+impl_arithmetic_int!(u16);
+impl_arithmetic_int!(u32);
+impl_arithmetic_int!(u64);
 
 impl Debug for SciNum {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -810,18 +797,27 @@ impl Debug for SciNum {
 impl fmt::Display for SciNum {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.is_exact() {
-            // Up to five decimal places, display normally
-            if (self < &dec!(1e6)) && (self >= &dec!(1e-5)) {
-                write!(f, "{}", Decimal::try_from(self.number()))
+            // Display up to five places normally
+            // If the number has more than five places,
+            // or insignificant zeros before the decimal point,
+            // display in scientific notation
+            if self.sigfigs() <= 5 && self.precision() <= 0 && self.precision() >= -5 {
+                if self.precision() == 0 {
+                    write!(f, "{}", self.significand)
+                } else {
+                    // 3.25e-2 is (325, -4), should be formatted as 0.0325
+                    let leading_zeros = "0".repeat((u32::from(self.precision().unsigned_abs()) - self.sigfigs()).try_into().unwrap());
+                    write!(f, "0.{}{}", leading_zeros, self.significand)
+                }
             // Otherwise, use scientific notation
             } else {
-                let (int, frac, exp) = self.scientific_parts_normalized();
+                let (int, frac, _, exp) = self.scientific_parts_normalized();
                 // Fractional part might not have any places at all (e.g. 2e6)
-                let frac_string = match frac {
-                    Some(n) => n.to_string(),
-                    None => String::new(),
-                };
-                write!(f, "{int}.{frac_string}e{exp}")
+                if let Some(n) = frac {
+                    write!(f, "{int}.{n}e{exp}")
+                } else {
+                    write!(f, "{int}e{exp}")
+                }
             }
         } else {
             // TODO Need to add support for ASCII +/-
@@ -1042,7 +1038,7 @@ mod tests {
     fn precision() {
         assert_eq!(SciNum::new(dec!(0.02)).precision(), -2);
         assert_eq!(SciNum::new(dec!(0.020)).precision(), -3);
-        assert_eq!(SciNum::new(dec!(2)).precision(), 0);
+        assert_eq!(SciNum::new(Decimal::TWO).precision(), 0);
         //assert_eq!(SciNum::new(dec!(2e3)).precision(), 3); // Fails for
         // now
     }
@@ -1158,7 +1154,7 @@ mod tests {
         let n1 = SciNum::new_with_uncertainty(60, 0);
         let n2 = 30;
         let result: SciNum = n1 / n2;
-        assert_eq!(result.number_dec(), dec!(2));
+        assert_eq!(result.number_dec(), Decimal::TWO);
     }
 
     #[test]
@@ -1177,7 +1173,7 @@ mod tests {
     fn exponentiation() {
         let n1 = SciNum::new_with_uncertainty(20, 2);
 
-        let result = n1.powd(dec!(2));
+        let result = n1.powd(Decimal::TWO);
         assert_eq!(result.number_dec(), dec!(400));
         assert_eq!(result.uncertainty_dec(), dec!(80));
 
