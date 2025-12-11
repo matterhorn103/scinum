@@ -213,13 +213,13 @@ impl SciNum {
     //    if self.negative { -unsigned } else { unsigned }
     //}
 
-    /// Returns a tuple of the integer, fractional, uncertainty, and exponent
-    /// parts of the of the number when represented with normalized
+    /// Returns the integer, leading zeros, fractional, uncertainty, and
+    /// exponent parts of the of the number when represented with normalized
     /// notation i.e. with 10 > _m_ >= 1.
     ///
-    /// Corresponds to `(ii, ffff, uu, nn)` when the number is notated as
-    /// `ii.ffff(uu) × 10^nn`.
-    pub fn scientific_parts_normalized(&self) -> (i8, Option<i128>, u32, i16) {
+    /// Corresponds to `(ii, zz, fff, uu, nn)` when the number is notated as
+    /// `ii.zzfff(uu) × 10^nn`.
+    pub fn scientific_parts_normalized(&self) -> (i8, u8, Option<i128>, u32, i16) {
         todo!()
         //if self.is_zero() {
         //    return (0, None, 0);
@@ -796,33 +796,34 @@ impl Debug for SciNum {
 
 impl fmt::Display for SciNum {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.is_exact() {
-            // Display up to five places normally
-            // If the number has more than five places,
-            // or insignificant zeros before the decimal point,
-            // display in scientific notation
-            if self.sigfigs() <= 5 && self.precision() <= 0 && self.precision() >= -5 {
-                if self.precision() == 0 {
-                    write!(f, "{}", self.significand)
-                } else {
-                    // 3.25e-2 is (325, -4), should be formatted as 0.0325
-                    let leading_zeros = "0".repeat((u32::from(self.precision().unsigned_abs()) - self.sigfigs()).try_into().unwrap());
-                    write!(f, "0.{}{}", leading_zeros, self.significand)
-                }
-            // Otherwise, use scientific notation
-            } else {
-                let (int, frac, _, exp) = self.scientific_parts_normalized();
-                // Fractional part might not have any places at all (e.g. 2e6)
-                if let Some(n) = frac {
-                    write!(f, "{int}.{n}e{exp}")
-                } else {
-                    write!(f, "{int}e{exp}")
-                }
-            }
+        let significand = self.significand;
+        let uncertainty = if self.is_exact() {
+            String::new()
         } else {
-            // TODO Need to add support for ASCII +/-
-            // Default representation should be parentheses notation in future though
-            write!(f, "{}±{}", self.number(), self.uncertainty())
+            format!("({})", self.uncertainty)
+        };
+        // Display up to five places normally
+        // If the number has more than five places,
+        // or insignificant zeros before the decimal point,
+        // display in scientific notation
+        if self.sigfigs() <= 5 && self.precision() <= 0 && self.precision() >= -5 {
+            if self.precision() == 0 {
+                write!(f, "{significand}{uncertainty}")
+            } else {
+                // 3.25e-2 is (325, -4), should be formatted as 0.0325
+                let leading_zeros = "0".repeat((u32::from(self.precision().unsigned_abs()) - self.sigfigs()).try_into().unwrap());
+                write!(f, "0.{leading_zeros}{significand}{uncertainty}")
+            }
+        // Otherwise, use scientific notation
+        } else {
+            let (int, zeros, frac, _, exp) = self.scientific_parts_normalized();
+            let leading_zeros = "0".repeat(zeros.into());
+            // Fractional part might not have any places at all (e.g. 2e6)
+            if let Some(frac) = frac {
+                write!(f, "{int}.{leading_zeros}{frac}{uncertainty}e{exp}")
+            } else {
+                write!(f, "{int}{uncertainty}e{exp}")
+            }
         }
     }
 }
@@ -836,15 +837,28 @@ impl FromStr for SciNum {
     /// 
     /// For now goes via `rust_decimal::Decimal::from_str()`.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let re = Regex::new(r"^(-?\d+(?:[.,]\d+)?)(?:[eE]([+-]?\d+))?$").unwrap();
+        //let re = Regex::new(r"^(-?\d+(?:[.,]\d+)?)(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
+        let re = Regex::new(r"^(-)?(\d+)(?:[.,](\d+))?(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
         let caps = re.captures(s).ok_or(SciNumError::Parse(s.into()))?;
-        let number_str = caps.get(1).ok_or(SciNumError::Parse(s.into()))?.as_str();
-        let dec = Decimal::from_str(number_str).map_err(|_e| SciNumError::Parse(s.into()))?;
-        let mut num = SciNum::from(dec);
-        let exponent_str = caps.get(2).map(|m| m.as_str()).unwrap_or("0");
-        let exponent = i16::from_str(exponent_str).map_err(|_e| SciNumError::Parse(s.into()))?;
-        num.exponent += exponent;
-        Ok(num)
+        // Example given with "6.971e-7"
+        let negative = caps.get(1).is_some(); // false
+        let mut significand_str = String::new();
+        let int = caps.get(2).ok_or(SciNumError::Parse(s.into()))?.as_str(); // "6"
+        significand_str.push_str(int);
+        let frac = caps.get(3).map_or("", |m| m.as_str()); // "971"
+        significand_str.push_str(frac);
+        let significand = u64::from_str(&significand_str).map_err(|_e| SciNumError::Parse(s.into()))?; // "6971"
+        let frac_places = frac.len(); // 3
+        let uncertainty = caps.get(4).map_or(Ok(0), |m| u32::from_str(m.as_str())).map_err(|_e| SciNumError::Parse(s.into()))?; // 0
+        let exponent = caps.get(5).map_or(Ok(0), |m| i16::from_str(m.as_str())).map_err(|_e| SciNumError::Parse(s.into()))?; // -7
+        // "6.971e-7" should be represented as (6971, -10)
+        Ok(Self {
+            negative,
+            exponent: exponent - (frac_places as i16),
+            uncertainty_scale: 0,
+            uncertainty,
+            significand,
+        })
     }
 }
 
