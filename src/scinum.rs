@@ -82,43 +82,6 @@ impl SciNum {
         }
     }
 
-    /// Creates a `SciNum` from separate integer and fractional parts,
-    /// corresponding to `ii.ffff(uu) × 10^nn`.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use scinum::SciNum;
-    /// #
-    /// let n = SciNum::from_scientific_parts(2, 51, 3, -1);
-    /// assert_eq!(n.to_string(), "0.251(3)");
-    /// ```
-    pub fn from_scientific_parts(
-        integer: i16,
-        fraction: u32,
-        uncertainty: u32,
-        exponent: i16,
-    ) -> Self {
-        let unsigned_integer: u32 = integer.unsigned_abs().into();
-        let (significand, exponent): (u64, i16) = {
-            if let Some(decimal_places_minus_one) = fraction.checked_ilog10() {
-                let decimal_places = decimal_places_minus_one + 1;
-                let significand = (unsigned_integer * 10_u32.pow(decimal_places)) + fraction;
-                let exponent = exponent - (decimal_places as i16);
-                (significand.into(), exponent)
-            } else {
-                (unsigned_integer.into(), exponent)
-            }
-        };
-        Self {
-            negative: integer.is_negative(),
-            exponent,
-            uncertainty_scale: 0,
-            uncertainty,
-            significand,
-        }
-    }
-
     /// Creates a new `SciNum` with the same number but the provided
     /// uncertainty.
     /// 
@@ -144,6 +107,92 @@ impl SciNum {
             self.uncertainty = uncertainty.significand.try_into().expect("The uncertainty may not have a significand greater than `u32::MAX`!");
         }
         self
+    }
+    
+    /// Creates a `SciNum` from separate parts of a representation of the number in
+    /// scientific notation.
+    /// 
+    /// The arguments should correspond to `(ii, z, fff, uu, nn)` when the number is
+    /// notated as `ii.{zeros}fff(uu) × 10^nn`, where `z` is the number of leading
+    /// zeros in the fractional part.
+    /// 
+    /// Trailing zeros in `fraction` are treated as significant, but leading zeros
+    /// are not. If `fraction` is simply `0`, it is then also treated as
+    /// insignificant. Passing `0` for both `zeros` and `fraction` therefore
+    /// creates a `SciNum` with a significand equal to `integer`.
+    /// 
+    /// To create a number with only significant zeros in the fractional part (such
+    /// as `2.0`), pass `0` for `fraction` and specify the appropriate number of
+    /// zeros as `zeros`.
+    /// 
+    /// # Panics
+    /// 
+    /// This function panics if the overall significand does not fit into `u64`.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scinum::SciNum;
+    /// #
+    /// let n = SciNum::from_scientific_parts(2, 0, 51, 0, 0);
+    /// assert_eq!(n.to_string(), "2.51");
+    /// let n = SciNum::from_scientific_parts(2, 1, 51, 0, 0);
+    /// assert_eq!(n.to_string(), "2.051");
+    /// let n = SciNum::from_scientific_parts(2, 0, 51, 3, 0);
+    /// assert_eq!(n.to_string(), "2.51(3)");
+    /// let n = SciNum::from_scientific_parts(2, 0, 51, 3, -1);
+    /// assert_eq!(n.to_string(), "0.251(3)");
+    /// let n = SciNum::from_scientific_parts(2, 2, 0, 3, -2);
+    /// assert_eq!(n.to_string(), "0.0200(3)");
+    /// ```
+    pub fn from_scientific_parts(
+        integer: i8,
+        zeros: u8,
+        fraction: u64,
+        uncertainty: u32,
+        exponent: i16,
+    ) -> Self {
+        let unsigned_integer: u64 = integer.unsigned_abs().into();
+        let (significand, exponent) = {
+            if fraction != 0 {
+                let decimal_places = fraction.ilog10() + 1;
+                let significand = (unsigned_integer * 10_u64.pow(decimal_places + zeros as u32)) + fraction;
+                let exponent = exponent - (decimal_places as i16);
+                (significand, exponent)
+            } else {
+                (unsigned_integer, exponent)
+            }
+        };
+        Self {
+            negative: integer.is_negative(),
+            exponent,
+            uncertainty_scale: 0,
+            uncertainty,
+            significand,
+        }
+    }
+
+    /// Returns the integer part, number of fractional leading zeros,
+    /// fractional part, uncertainty, and exponent of the number when represented
+    /// with normalized notation i.e. with 10 > _m_ >= 1.
+    ///
+    /// Corresponds to `(ii, z, fff, uu, nn)` when the number is notated as
+    /// `ii.{zeros}fff(uu) × 10^nn`, where `z` is the number of leading zeros
+    /// in the fractional part.
+    pub fn scientific_parts(&self) -> (i8, u8, u64, u32, i16) {
+        if self.is_zero() {
+            return (0, 0, 0, 0, 0)
+        };
+        let figs = self.sigfigs();
+        let int_unsigned = self.significand / 10_u64.pow(figs - 1); // First digit
+        let int = if self.negative {-(int_unsigned as i8)} else { int_unsigned as i8 };
+        let frac = self.significand % 10_u64.pow(figs - 1);
+        // Work out how many zeros have been dropped, if any
+        let figs_in_frac = frac.checked_ilog10().map_or(0, |x| x + 1);
+        let zeros = (figs - 1 - figs_in_frac) as u8; // 1 is for integer digit
+        let uncert = self.uncertainty;
+        let exp = self.exponent - (figs as i16 - 1);
+        (int, zeros, frac, uncert, exp)
     }
 
     /// Returns the number as an exact `SciNum` without its uncertainty.
@@ -212,40 +261,6 @@ impl SciNum {
     //        | self.number_lo as i128;
     //    if self.negative { -unsigned } else { unsigned }
     //}
-
-    /// Returns the integer, leading zeros, fractional, uncertainty, and
-    /// exponent parts of the of the number when represented with normalized
-    /// notation i.e. with 10 > _m_ >= 1.
-    ///
-    /// Corresponds to `(ii, zz, fff, uu, nn)` when the number is notated as
-    /// `ii.zzfff(uu) × 10^nn`.
-    pub fn scientific_parts_normalized(&self) -> (i8, u8, Option<i128>, u32, i16) {
-        todo!()
-        //if self.is_zero() {
-        //    return (0, None, 0);
-        //}
-        //let significand = self.significand_integral();
-        //// Work out the number of places the decimal point needs to move to the left in
-        //// the significand to get the correct representation
-        //let (divisor, exponent) = if Decimal::try_from(self.number()).abs() < Decimal::ONE {
-        //    // For small numbers decimal already provides us with the scale
-        //    let shifted_places = significand.abs().ilog10() as i16;
-        //    let divisor = 10_i128.pow(shifted_places as u32);
-        //    let exponent = -(self.number_scale as i16) + shifted_places;
-        //    (divisor, exponent)
-        //} else {
-        //    // For large integers Decimal's scale is 0 so we take the base 10 logarithm
-        //    let shifted_places = (significand.abs().ilog10() as i16) + (self.number_scale as i16);
-        //    let divisor = 10_i128.pow(shifted_places as u32);
-        //    let exponent = self.exponent_integral() + shifted_places;
-        //    (divisor, exponent)
-        //};
-        //let int_part = significand / divisor;
-        //let frac_part = significand.abs() % divisor;
-        //let exp_part = exponent;
-        //
-        //(int_part as i8, Some(frac_part), exp_part)
-    }
 
     /// Returns the exponent _n_ of the number when represented with normalized
     /// notation i.e. with 10 > _m_ >= 1.
@@ -811,18 +826,18 @@ impl fmt::Display for SciNum {
                 write!(f, "{significand}{uncertainty}")
             } else {
                 // 3.25e-2 is (325, -4), should be formatted as 0.0325
-                let leading_zeros = "0".repeat((u32::from(self.precision().unsigned_abs()) - self.sigfigs()).try_into().unwrap());
-                write!(f, "0.{leading_zeros}{significand}{uncertainty}")
+                let zeros = "0".repeat((u32::from(self.precision().unsigned_abs()) - self.sigfigs()).try_into().unwrap());
+                write!(f, "0.{zeros}{significand}{uncertainty}")
             }
         // Otherwise, use scientific notation
         } else {
-            let (int, zeros, frac, _, exp) = self.scientific_parts_normalized();
-            let leading_zeros = "0".repeat(zeros.into());
+            let (int, zeros, frac, _, exp) = self.scientific_parts();
+            let zeros = "0".repeat(zeros.into());
             // Fractional part might not have any places at all (e.g. 2e6)
-            if let Some(frac) = frac {
-                write!(f, "{int}.{leading_zeros}{frac}{uncertainty}e{exp}")
-            } else {
+            if frac == 0 {
                 write!(f, "{int}{uncertainty}e{exp}")
+            } else {
+                write!(f, "{int}.{zeros}{frac}{uncertainty}e{exp}")
             }
         }
     }
@@ -832,10 +847,6 @@ impl FromStr for SciNum {
     type Err = SciNumError;
 
     /// Parses a string and attempts to create a corresponding `SciNum`.
-    /// 
-    /// Does not currently support uncertainties.
-    /// 
-    /// For now goes via `rust_decimal::Decimal::from_str()`.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         //let re = Regex::new(r"^(-?\d+(?:[.,]\d+)?)(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
         let re = Regex::new(r"^(-)?(\d+)(?:[.,](\d+))?(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
@@ -913,28 +924,6 @@ impl SciNum {
     };
 }
 
-// Constants taken from rust_decimal
-#[allow(dead_code)]
-pub mod dec {
-    // Sign mask for the flags field. A value of zero in this bit indicates a
-    // positive Decimal value, and a value of one in this bit indicates a
-    // negative Decimal value.
-    pub(crate) const SIGN_MASK: u32 = 0x8000_0000;
-    pub(crate) const UNSIGN_MASK: u32 = 0x4FFF_FFFF;
-
-    // Scale mask for the flags field. This byte in the flags field contains
-    // the power of 10 to divide the Decimal value by. The scale byte must
-    // contain a value between 0 and 28 inclusive.
-    pub const SCALE_MASK: u32 = 0x00FF_0000;
-    pub const U8_MASK: u32 = 0x0000_00FF;
-    pub const U32_MASK: u64 = u32::MAX as _;
-
-    // Number of bits scale is shifted by.
-    pub const SCALE_SHIFT: u32 = 16;
-    // Number of bits sign is shifted by.
-    pub const SIGN_SHIFT: u32 = 31;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -970,326 +959,335 @@ mod tests {
 
     #[test]
     fn from_scientific_parts() {
-        let n1 = SciNum::from_scientific_parts(67, 2, 0, 0); // 67.2
+        let n1 = SciNum::from_scientific_parts(67, 0, 2, 0, 0); // 67.2
         assert_eq!(n1.to_string(), "67.2");
         assert_eq!(n1, SciNum::new(670, -1));
 
-        // Should always get at least one decimal place using this method
-        let n2 = SciNum::from_scientific_parts(672, 0, 0, 0); // 672.0
-        assert_eq!(n2.to_string(), "672.0");
-        assert_eq!(n2, SciNum::new(6720, -1));
+        let n2 = SciNum::from_scientific_parts(67, 1, 0, 0, 0); // 67.0
+        assert_eq!(n2.to_string(), "67.0");
+        assert_eq!(n2, SciNum::new(670, -1));
 
-        let n3 = SciNum::from_scientific_parts(2, 36, 0, 5);
+        let n3 = SciNum::from_scientific_parts(2, 0, 36, 0, 5);
         assert_eq!(n3.to_string(), "2.36e5");
         assert_eq!(n3, SciNum::from(dec!(2.36e5)));
 
-        let n4 = SciNum::from_scientific_parts(23, 61, 0, -7);
+        let n4 = SciNum::from_scientific_parts(23, 0, 61, 0, -7);
         assert_eq!(n4.to_string(), "2.361e-6");
         assert_eq!(n4, SciNum::from(dec!(2.361e-6)));
     }
 
     #[test]
-    #[should_panic] // For now, not supported yet
-    fn exact_from_scientific_parts_large() {
+    fn new_large() {
         let _n = SciNum::new(236, 40);
     }
 
     #[test]
-    #[should_panic] // For now, not supported
-    fn exact_from_scientific_parts_small() {
+    fn new_small() {
         let _n = SciNum::new(49, -76);
     }
 
     #[test]
-    fn num_dec() {
+    fn into_decimal() {
         let n = SciNum::new_with_uncertainty(20, 2, 0);
-        assert_eq!(n.number_dec(), dec!(20));
+        assert_eq!(Decimal::try_from(n).unwrap(), dec!(20));
     }
 
     #[test]
-    fn uncert_dec() {
+    #[should_panic]
+    fn into_decimal_fails() {
+        let n = SciNum::new_with_uncertainty(20, 2, 40);
+        let _d = Decimal::try_from(n).unwrap();
+    }
+
+    #[test]
+    fn uncertainty() {
         let n = SciNum::new_with_uncertainty(30, 5, 0);
-        assert_eq!(n.uncertainty_dec(), dec!(5));
+        assert_eq!(n.uncertainty(), SciNum::new(5, 0));
     }
 
     #[test]
     fn relative_uncertainty() {
         let n = SciNum::new_with_uncertainty(20, 2, 0);
-        assert_eq!(n.relative_uncertainty_dec(), dec!(0.1));
+        assert_eq!(n.relative_uncertainty(), SciNum::new(1, -1));
 
         let n2 = SciNum::new_with_uncertainty(500, 5, 0);
-        assert_eq!(n2.relative_uncertainty_dec(), dec!(0.01));
+        assert_eq!(n2.relative_uncertainty(), SciNum::new(1, -2));
 
         let n3 = SciNum::new_with_uncertainty(1000, 15, 0);
-        assert_eq!(n3.relative_uncertainty_dec(), dec!(0.015));
+        assert_eq!(n3.relative_uncertainty(), SciNum::new(15, -3));
     }
 
     #[test]
     fn sigfigs() {
-        let n = SciNum::from_scientific_parts(123, 45, 0, 0);
+        let n = SciNum::from_scientific_parts(123, 0, 45, 0, 0);
         assert_eq!(n.sigfigs(), 5);
 
-        let n2 = SciNum::new(dec!(0.00123));
-        assert_eq!(n2.sigfigs(), 3);
+        let n2 = SciNum::from_scientific_parts(123, 1, 45, 0, 0);
+        assert_eq!(n2.sigfigs(), 6);
 
-        let n3 = SciNum::new(dec!(1234));
-        assert_eq!(n3.sigfigs(), 4);
+        let n3 = SciNum::from(dec!(0.00123));
+        assert_eq!(n3.sigfigs(), 3);
+
+        let n4 = SciNum::new(1234, 0);
+        assert_eq!(n4.sigfigs(), 4);
     }
 
     #[test]
     fn sigfigs_trailing_zeros() {
-        let n = SciNum::new(dec!(123.4500));
+        let n = SciNum::from_scientific_parts(123, 0, 4500, 0, 0);
         assert_eq!(n.sigfigs(), 7);
 
-        let n2 = SciNum::new(dec!(0.001230));
+        let n2 = SciNum::from(dec!(0.001230));
         assert_eq!(n2.sigfigs(), 4);
 
-        let n3 = SciNum::new(dec!(1230));
+        let n3 = SciNum::new(1230, 0);
         assert_eq!(n3.sigfigs(), 4);
     }
 
     #[test]
     fn precision() {
-        assert_eq!(SciNum::new(dec!(0.02)).precision(), -2);
-        assert_eq!(SciNum::new(dec!(0.020)).precision(), -3);
-        assert_eq!(SciNum::new(Decimal::TWO).precision(), 0);
-        //assert_eq!(SciNum::new(dec!(2e3)).precision(), 3); // Fails for
-        // now
+        assert_eq!(sci!(0.02).precision(), -2);
+        assert_eq!(SciNum::from(dec!(0.020)).precision(), -3);
+        assert_eq!(SciNum::from(Decimal::TWO).precision(), 0);
+        assert_eq!(SciNum::new(2, 3).precision(), 3);
+        assert_eq!(SciNum::from_str("2e3").unwrap().precision(), 3);
     }
 
     #[test]
     fn is_exact() {
-        let n1 = SciNum::new(dec!(45.1));
-        let n2 = SciNum::new_with_uncertainty(500, 5);
+        let n1 = sci!(45.1);
+        let n2 = SciNum::new_with_uncertainty(500, 5, 0);
         assert!(n1.is_exact());
         assert!(!n2.is_exact());
     }
 
     #[test]
     fn addition_fn_exact() {
-        let n1 = SciNum::new(40);
-        let n2 = SciNum::new(dec!(5.1));
+        let n1 = SciNum::new(40, 0);
+        let n2 = sci!(5.1);
         let result = n1.add_with_correlation(n2, 0);
-        assert_eq!(result.number_dec(), dec!(45.1));
+        assert_eq!(result, sci!(45.1));
     }
 
     #[test]
     fn addition_fn() {
-        let n1 = SciNum::new_with_uncertainty(20, 2);
-        let n2 = SciNum::new_with_uncertainty(30, 5);
+        let n1 = SciNum::new_with_uncertainty(20, 2, 0);
+        let n2 = SciNum::new_with_uncertainty(30, 5, 0);
         let result = n1.add_with_correlation(n2, 0);
-        assert_eq!(result.number_dec(), dec!(50));
+        assert_eq!(result.number(), sci!(50));
         assert_eq!(
-            result.uncertainty_dec().round_dp(5),
+            Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
             dec!(5.3851648071345).round_dp(5)
         );
     }
 
     #[test]
     fn addition_op() {
-        let n1 = SciNum::new_with_uncertainty(20, 2);
-        let n2 = SciNum::new_with_uncertainty(30, 5);
+        let n1 = SciNum::new_with_uncertainty(20, 2, 0);
+        let n2 = SciNum::new_with_uncertainty(30, 5, 0);
         let result = n1 + n2;
-        assert_eq!(result.number_dec(), dec!(50));
+        assert_eq!(result.number(), sci!(50));
         assert_eq!(
-            result.uncertainty_dec().round_dp(5),
+            Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
             dec!(5.3851648071345).round_dp(5)
         );
     }
 
     #[test]
     fn addition_with_int() {
-        let n1 = SciNum::new_with_uncertainty(20, 0);
+        let n1 = SciNum::new(20, 0);
         let n2 = 30;
         let result: SciNum = n1 + n2;
-        assert_eq!(result.number_dec(), dec!(50));
+        assert_eq!(result.number(), sci!(50));
     }
 
     #[test]
     fn subtraction() {
-        let n1 = SciNum::new_with_uncertainty(20, 2);
-        let n2 = SciNum::new_with_uncertainty(30, 5);
+        let n1 = SciNum::new_with_uncertainty(20, 2, 0);
+        let n2 = SciNum::new_with_uncertainty(30, 5, 0);
         let result = n1 - n2;
-        assert_eq!(result.number_dec(), dec!(-10));
+        assert_eq!(result, sci!(-10));
         assert_eq!(
-            result.uncertainty_dec().round_dp(5),
+            Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
             dec!(5.3851648071345).round_dp(5)
         );
     }
 
     #[test]
     fn subtraction_with_int() {
-        let n1 = SciNum::new_with_uncertainty(20, 0);
+        let n1 = SciNum::new(20, 0);
         let n2 = 30;
         let result: SciNum = n1 - n2;
-        assert_eq!(result.number_dec(), dec!(-10));
+        assert_eq!(result, sci!(-10));
     }
 
     #[test]
     fn multiplication() {
-        let n1 = SciNum::new_with_uncertainty(20, 2);
-        let n2 = SciNum::new_with_uncertainty(30, 5);
+        let n1 = SciNum::new_with_uncertainty(20, 2, 0);
+        let n2 = SciNum::new_with_uncertainty(30, 5, 0);
         let result = n1 * n2;
-        assert_eq!(result.number_dec(), dec!(600));
+        assert_eq!(result, sci!(600));
         assert_eq!(
-            result.uncertainty_dec().round_dp(5),
+            Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
             dec!(116.619037896906).round_dp(5)
         );
-        let ft = SciNum::new(dec!(0.3048));
+        let ft = SciNum::from(dec!(0.3048));
         let square_ft = ft * ft;
-        assert_eq!(square_ft.number_dec(), dec!(0.09290304));
+        assert_eq!(square_ft, sci!(0.09290304));
     }
 
     #[test]
     fn multiplication_with_int() {
-        let n1 = SciNum::new_with_uncertainty(20, 0);
+        let n1 = SciNum::new(20, 0);
         let n2 = 30;
         let result: SciNum = n1 * n2;
-        assert_eq!(result.number_dec(), dec!(600));
+        assert_eq!(result, sci!(600));
     }
 
     #[test]
     fn division() {
-        let n1 = SciNum::new_with_uncertainty(20, 2);
-        let n2 = SciNum::new_with_uncertainty(30, 5);
+        let n1 = SciNum::new_with_uncertainty(20, 2, 0);
+        let n2 = SciNum::new_with_uncertainty(30, 5, 0);
         let result = n1 / n2;
         assert_eq!(
-            result.number_dec().round_dp(10),
+            Decimal::try_from(result.uncertainty()).unwrap().round_dp(10),
             dec!(0.6666666667).round_dp(10)
         );
         assert_eq!(
-            result.uncertainty_dec().round_dp(5),
+            Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
             dec!(0.129576708774340).round_dp(5)
         );
     }
 
     #[test]
     fn division_with_int() {
-        let n1 = SciNum::new_with_uncertainty(60, 0);
+        let n1 = SciNum::new(60, 0);
         let n2 = 30;
         let result: SciNum = n1 / n2;
-        assert_eq!(result.number_dec(), Decimal::TWO);
+        assert_eq!(result, SciNum::from(Decimal::TWO));
     }
 
     #[test]
     fn division_reversed() {
-        let n1 = SciNum::new_with_uncertainty(20, 2);
-        let n2 = SciNum::new_with_uncertainty(30, 5);
+        let n1 = SciNum::new_with_uncertainty(20, 2, 0);
+        let n2 = SciNum::new_with_uncertainty(30, 5, 0);
         let result = n2 / n1;
-        assert_eq!(result.number_dec(), dec!(1.5));
+        assert_eq!(result, sci!(1.5));
         assert_eq!(
-            result.uncertainty_dec().round_dp(5),
+            Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
             dec!(0.2915475947422).round_dp(5)
         );
     }
 
     #[test]
     fn exponentiation() {
-        let n1 = SciNum::new_with_uncertainty(20, 2);
+        let n1 = SciNum::new_with_uncertainty(20, 2, 0);
 
         let result = n1.powd(Decimal::TWO);
-        assert_eq!(result.number_dec(), dec!(400));
-        assert_eq!(result.uncertainty_dec(), dec!(80));
+        assert_eq!(result.number(), sci!(400));
+        assert_eq!(result.uncertainty(), sci!(80));
 
         let result = n1.powi(2);
-        assert_eq!(result.number_dec(), dec!(400));
-        assert_eq!(result.uncertainty_dec(), dec!(80));
+        assert_eq!(result.number(), sci!(400));
+        assert_eq!(result.uncertainty(), sci!(80));
     }
 
     #[test]
     fn natural_log() {
-        let n1 = SciNum::new_with_uncertainty(20, 2);
-        let n2 = SciNum::new_with_uncertainty(30, 5);
+        let n1 = SciNum::new_with_uncertainty(20, 2, 0);
+        let n2 = SciNum::new_with_uncertainty(30, 5, 0);
         let ratio = n1 / n2;
         let result = ratio.ln();
         assert_eq!(
-            result.uncertainty_dec().round_dp(5),
+            Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
             dec!(0.194365063161).round_dp(5)
         );
     }
 
     #[test]
     fn log_base10() {
-        let n1 = SciNum::new_with_uncertainty(20, 2);
-        let n2 = SciNum::new_with_uncertainty(30, 5);
+        let n1 = SciNum::new_with_uncertainty(20, 2, 0);
+        let n2 = SciNum::new_with_uncertainty(30, 5, 0);
         let ratio = n1 / n2;
         let result = ratio.log10();
         assert_eq!(
-            result.uncertainty_dec().round_dp(5),
+            Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
             dec!(0.08441167440582).round_dp(5)
         );
     }
 
     #[test]
     fn exponential() {
-        let n1 = SciNum::new_with_uncertainty(20, 2);
-        let n2 = SciNum::new_with_uncertainty(30, 5);
+        let n1 = SciNum::new_with_uncertainty(20, 2, 0);
+        let n2 = SciNum::new_with_uncertainty(30, 5, 0);
         let ratio = n1 / n2;
         let result = ratio.exp();
         assert_eq!(
-            result.uncertainty_dec().round_dp(5),
+            Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
             dec!(0.25238096660761).round_dp(5)
         );
     }
 
     #[test]
     fn debug() {
-        let n = SciNum::new_with_uncertainty(20, 2);
+        let n = SciNum::new_with_uncertainty(20, 2, 0);
         assert_eq!(format!("{n:?}"), "SciNum { number: 20, uncertainty: 2 }");
     }
 
     #[test]
     fn display() {
         // Small integers display normally
-        assert_eq!(SciNum::new(20).to_string(), "20");
+        assert_eq!(SciNum::new(20, 0).to_string(), "20");
         // Up to 5 places displays normally
-        assert_eq!(SciNum::new(99999).to_string(), "99999");
-        assert_eq!(SciNum::new(dec!(0.00001)).to_string(), "0.00001");
+        assert_eq!(SciNum::new(99999, 0).to_string(), "99999");
+        assert_eq!(SciNum::from(dec!(0.00001)).to_string(), "0.00001");
         // Above 6 places uses scientific notation
-        assert_eq!(SciNum::new(1295891).to_string(), "1.295891e6");
-        assert_eq!(SciNum::new(dec!(0.000000432)).to_string(), "4.32e-7");
+        assert_eq!(SciNum::new(1295891, 0).to_string(), "1.295891e6");
+        assert_eq!(SciNum::from(dec!(0.000000432)).to_string(), "4.32e-7");
         // Explicit zeros should be treated as significant
-        assert_eq!(SciNum::new(1295800).to_string(), "1.295800e6");
-        // Here they shouldn't be but the problem is that Decimal does treat them as
-        // significant... assert_eq!(SciNum::new(dec!(1.2958e6)).
-        // to_string(), "1.2958e6"); Check uncertainty formatting
-        assert_eq!(SciNum::new_with_uncertainty(20, 2).to_string(), "20±2");
+        assert_eq!(SciNum::new(1295800, 0).to_string(), "1.295800e6");
+        // Here they shouldn't be
+        assert_eq!(sci!(1.2958e6).to_string(), "1.2958e6");
+        // Check uncertainty formatting
+        assert_eq!(SciNum::new_with_uncertainty(20, 2, 0).to_string(), "20(2)");
         // TODO: More uncertainty display tests
     }
 
     #[test]
     fn from_str() {
         // Integer
-        assert_eq!(SciNum::from_str("42").unwrap(), SciNum::new(dec!(42)));
+        assert_eq!(SciNum::from_str("42").unwrap(), SciNum::from(dec!(42)));
         // Negative float
         assert_eq!(
             SciNum::from_str("-3.14").unwrap(),
-            SciNum::new(dec!(-3.14))
+            SciNum::from(dec!(-3.14))
         );
         // Scientific notation
         assert_eq!(
             SciNum::from_str("1.5e8").unwrap(),
-            SciNum::new(dec!(1.5e8))
+            SciNum::from(dec!(1.5e8))
         );
         // TODO large exponent fails with overflow error
         //assert_eq!(SciNum::from_str("1.5e10").unwrap(),
-        // SciNum::new(dec!(1.5e10))); Scientific notation with negative
+        // SciNum::from(dec!(1.5e10))); Scientific notation with negative
         // exponent
         assert_eq!(
             SciNum::from_str("2e-5").unwrap(),
-            SciNum::new(dec!(2e-5))
+            SciNum::from(dec!(2e-5))
         );
         // Negative number with positive exponent
         assert_eq!(
             SciNum::from_str("-6.022e6").unwrap(),
-            SciNum::new(dec!(-6.022e6))
+            SciNum::from(dec!(-6.022e6))
         );
         // TODO large exponent fails with overflow error
-        //assert_eq!(SciNum::from_str("-6.022e23").unwrap(),
-        // SciNum::new(dec!(-6.022e23))); Capital E for exponent
+        assert_eq!(
+            SciNum::from_str("-6.022e23").unwrap(),
+            SciNum::from(dec!(-6.022e23)));
+        // Capital E for exponent
         assert_eq!(
             SciNum::from_str("1.5E8").unwrap(),
-            SciNum::new(dec!(1.5E8))
+            SciNum::from(dec!(1.5E8))
         );
         // Make sure incorrectly formatted string fails
         assert!(SciNum::from_str("not a number").is_err());
@@ -1300,7 +1298,7 @@ mod tests {
         // Integer
         assert_eq!(sci!(42), SciNum::new(42, 0));
         // Negative float
-        assert_eq!(sci!(-3.14), SciNum::from_scientific_parts(-3, 14, 0, 0));
+        assert_eq!(sci!(-3.14), SciNum::from_scientific_parts(-3, 0, 14, 0, 0));
         // Scientific notation
         assert_eq!(sci!(1.5e8), SciNum::new(15, 7));
         // Scientific notation with large exponent
