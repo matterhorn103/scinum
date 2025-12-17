@@ -42,6 +42,8 @@ pub struct SciNum {
 // Only use 15 of the 16 bits so that we can fit the sign and exponent into 16
 // bits later if so desired
 const UEXPONENT_BIAS: u16 = 16383;
+const UMIN_EXPONENT: u16 = 0;
+const UMAX_EXPONENT: u16 = 32767;
 const EXPONENT_BIAS: i16 = 16383;
 const MIN_EXPONENT: i16 = -16383;
 const MAX_EXPONENT: i16 = 16384;
@@ -1150,7 +1152,7 @@ impl SciNum {
     /// A constant representing 0.
     pub const ZERO: SciNum = SciNum {
         negative: false,
-        exponent: 0,
+        exponent: UEXPONENT_BIAS,
         uncertainty_scale: 0,
         uncertainty: 0,
         significand: 0,
@@ -1159,34 +1161,28 @@ impl SciNum {
     /// A constant representing 1.
     pub const ONE: SciNum = SciNum {
         negative: false,
-        exponent: 0,
+        exponent: UEXPONENT_BIAS,
         uncertainty_scale: 0,
         uncertainty: 0,
         significand: 1,
     };
 
-    /// The largest supported number.
-    ///
-    /// Exponent is limited to 0 until the arithmetic is reimplemented to not go
-    /// via `Decimal`.
+    /// The highest supported number.
     pub const MAX: SciNum = SciNum {
         negative: false,
-        exponent: 0,
+        exponent: UMAX_EXPONENT,
         uncertainty_scale: 0,
         uncertainty: 0,
         significand: u64::MAX,
     };
 
-    /// The smallest supported number.
-    ///
-    /// Exponent is limited to 0 until the arithmetic is reimplemented to not go
-    /// via `Decimal`.
+    /// The lowest supported number.
     pub const MIN: SciNum = SciNum {
         negative: true,
-        exponent: 0,
+        exponent: UMIN_EXPONENT,
         uncertainty_scale: 0,
         uncertainty: 0,
-        significand: u64::MAX,
+        significand: 1,
     };
 }
 
