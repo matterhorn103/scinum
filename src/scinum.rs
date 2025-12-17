@@ -7,7 +7,7 @@ use std::{
     str::FromStr,
 };
 
-use num_traits::{FromPrimitive, Inv, Num, One, Pow, Zero};
+use num_traits::{FromPrimitive, Inv, Num, One, Pow, Zero, real::Real};
 use regex::Regex;
 use rust_decimal::{Decimal, MathematicalOps};
 
@@ -407,17 +407,12 @@ impl SciNum {
     }
 
     #[inline]
-    pub fn powi(self, rhs: i64) -> Self {
-        self.powd(rhs.into())
-    }
-
-    #[inline]
     pub fn powd(self, rhs: Decimal) -> Self {
         self.pow_with_correlation(rhs.into(), Decimal::ZERO)
     }
 
     #[inline]
-    pub fn powf(self, rhs: f64) -> Self {
+    pub fn powfloat(self, rhs: f64) -> Self {
         let rhs = Self::from_f64(rhs).unwrap();
         self.pow_with_correlation(rhs, Decimal::ZERO)
     }
@@ -453,38 +448,6 @@ impl SciNum {
             Self::from(number).with_uncertainty(uncertainty.into())
         }
     }
-
-    pub fn ln(self) -> Self {
-        let number = Decimal::try_from(self.number()).unwrap().ln();
-        if self.is_exact() {
-            Self::from(number)
-        } else {
-            let uncertainty = Decimal::try_from(self.relative_uncertainty()).unwrap().abs();
-            Self::from(number).with_uncertainty(uncertainty.into())
-        }
-    }
-
-    pub fn log10(self) -> Self {
-        let number = Decimal::try_from(self.number()).unwrap().log10();
-        if self.is_exact() {
-            Self::from(number)
-        } else {
-            let uncertainty = (Decimal::try_from(self.uncertainty()).unwrap()
-                / (Decimal::TEN.ln() * Decimal::try_from(self.number()).unwrap()))
-            .abs();
-            Self::from(number).with_uncertainty(uncertainty.into())
-        }
-    }
-
-    pub fn exp(self) -> Self {
-        let number = Decimal::try_from(self.number()).unwrap().exp();
-        if self.is_exact() {
-            Self::from(number)
-        } else {
-            let uncertainty = number.abs() * Decimal::try_from(self.uncertainty()).unwrap();
-            Self::from(number).with_uncertainty(uncertainty.into())
-        }
-    }
 }
 
 impl Num for SciNum {
@@ -516,6 +479,223 @@ impl One for SciNum {
     fn one() -> Self {
         Self::ONE
     }
+}
+
+// Methods that will belong to the Real trait if we implement it properly later
+// impl Real for SciNum {
+impl SciNum {
+    //fn min_value() -> Self {
+    //    todo!()
+    //}
+
+    //fn min_positive_value() -> Self {
+    //    todo!()
+    //}
+
+    //fn epsilon() -> Self {
+    //    todo!()
+    //}
+
+    //fn max_value() -> Self {
+    //    todo!()
+    //}
+
+    //fn floor(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn ceil(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn round(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn trunc(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn fract(self) -> Self {
+    //    todo!()
+    //}
+
+    fn abs(self) -> Self {
+        Self {
+            negative: false,
+            ..self
+        }
+    }
+
+    //fn signum(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn is_sign_positive(self) -> bool {
+    //    todo!()
+    //}
+
+    //fn is_sign_negative(self) -> bool {
+    //    todo!()
+    //}
+
+    //fn mul_add(self, a: Self, b: Self) -> Self {
+    //    todo!()
+    //}
+
+    //fn recip(self) -> Self {
+    //    todo!()
+    //}
+
+    #[inline]
+    pub fn powi(self, rhs: i32) -> Self {
+        self.powd(rhs.into())
+    }
+
+    //fn powf(self, n: Self) -> Self {
+    //    todo!()
+    //}
+
+    fn sqrt(self) -> Self {
+        if self.is_sign_negative() { panic!() };
+        self.powi(-2)
+    }
+
+    pub fn exp(self) -> Self {
+        let number = Decimal::try_from(self.number()).unwrap().exp();
+        if self.is_exact() {
+            Self::from(number)
+        } else {
+            let uncertainty = number.abs() * Decimal::try_from(self.uncertainty()).unwrap();
+            Self::from(number).with_uncertainty(uncertainty.into())
+        }
+    }
+
+    //fn exp2(self) -> Self {
+    //    todo!()
+    //}
+
+    pub fn ln(self) -> Self {
+        let number = Decimal::try_from(self.number()).unwrap().ln();
+        if self.is_exact() {
+            Self::from(number)
+        } else {
+            let uncertainty = Decimal::try_from(self.relative_uncertainty()).unwrap().abs();
+            Self::from(number).with_uncertainty(uncertainty.into())
+        }
+    }
+
+    //fn log(self, base: Self) -> Self {
+    //    todo!()
+    //}
+
+    //fn log2(self) -> Self {
+    //    todo!()
+    //}
+
+    pub fn log10(self) -> Self {
+        let number = Decimal::try_from(self.number()).unwrap().log10();
+        if self.is_exact() {
+            Self::from(number)
+        } else {
+            let uncertainty = (Decimal::try_from(self.uncertainty()).unwrap()
+                / (Decimal::TEN.ln() * Decimal::try_from(self.number()).unwrap()))
+            .abs();
+            Self::from(number).with_uncertainty(uncertainty.into())
+        }
+    }
+
+    //fn to_degrees(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn to_radians(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn max(self, other: Self) -> Self {
+    //    todo!()
+    //}
+
+    //fn min(self, other: Self) -> Self {
+    //    todo!()
+    //}
+
+    //fn abs_sub(self, other: Self) -> Self {
+    //    todo!()
+    //}
+
+    //fn cbrt(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn hypot(self, other: Self) -> Self {
+    //    todo!()
+    //}
+
+    //fn sin(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn cos(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn tan(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn asin(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn acos(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn atan(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn atan2(self, other: Self) -> Self {
+    //    todo!()
+    //}
+
+    //fn sin_cos(self) -> (Self, Self) {
+    //    todo!()
+    //}
+
+    //fn exp_m1(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn ln_1p(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn sinh(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn cosh(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn tanh(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn asinh(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn acosh(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn atanh(self) -> Self {
+    //    todo!()
+    //}
 }
 
 impl From<Decimal> for SciNum {
@@ -599,7 +779,16 @@ impl Add for SciNum {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
-        self.add_with_correlation(rhs, Decimal::ZERO)
+        let number = Decimal::try_from(self.number()).unwrap() + Decimal::try_from(rhs.number()).unwrap();
+        if self.is_exact() && rhs.is_exact() {
+            Self::from(number)
+        } else {
+            let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
+                + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2)))
+                .sqrt()
+                .unwrap();
+            Self::from(number).with_uncertainty(uncertainty.into())
+        }
     }
 }
 
@@ -607,7 +796,7 @@ impl Add for &SciNum {
     type Output = SciNum;
 
     fn add(self, rhs: Self) -> SciNum {
-        self.add_with_correlation(*rhs, Decimal::ZERO)
+        *self + *rhs
     }
 }
 
@@ -615,7 +804,16 @@ impl Sub for SciNum {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
-        self.sub_with_correlation(rhs, Decimal::ZERO)
+        let number = Decimal::try_from(self.number()).unwrap() - Decimal::try_from(rhs.number()).unwrap();
+        if self.is_exact() && rhs.is_exact() {
+            Self::from(number)
+        } else {
+            let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
+                + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2)))
+                .sqrt()
+                .unwrap();
+            Self::from(number).with_uncertainty(uncertainty.into())
+        }
     }
 }
 
@@ -623,7 +821,7 @@ impl Sub for &SciNum {
     type Output = SciNum;
 
     fn sub(self, rhs: Self) -> SciNum {
-        self.sub_with_correlation(*rhs, Decimal::ZERO)
+        *self - *rhs
     }
 }
 
@@ -631,7 +829,41 @@ impl Mul for SciNum {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self {
-        self.mul_with_correlation(rhs, Decimal::ZERO)
+        let negative = self.negative ^ rhs.negative;
+        let (significand, exponent) = match self.significand.checked_mul(rhs.significand) {
+            Some(s) => (s, self.exponent + rhs.exponent),
+            None => {
+                // Significand multiplication results in overflow, so convert to u128,
+                // do mul (which won't ever overflow), then round
+                let mut too_wide = (self.significand as u128) * (rhs.significand as u128);
+                let mut e = self.exponent + rhs.exponent;
+                let s: u64 = loop {
+                    match u64::try_from(too_wide) {
+                        Err(_) => {
+                            // Still too wide so divide by 10
+                            // In future we should round; for now, just truncate
+                            too_wide /= 10;
+                            e += 1;
+                            continue;
+                        }
+                        // We have reduced the precision of the significand enough that it
+                        // into a u64 again
+                        Ok(narrow_enough) => break narrow_enough,
+                    }
+                };
+                (s, e)
+            },
+        };
+        let number = Self { negative, exponent, uncertainty_scale: 0, uncertainty: 0, significand };
+        if self.is_exact() && rhs.is_exact() {
+            number
+        } else {
+            let uncertainty = (self.relative_uncertainty().pow(2.into())
+                + rhs.relative_uncertainty().pow(2.into()))
+                .sqrt()
+                * number.abs();
+            number.with_uncertainty(uncertainty)
+        }
     }
 }
 
@@ -639,7 +871,7 @@ impl Mul for &SciNum {
     type Output = SciNum;
 
     fn mul(self, rhs: Self) -> SciNum {
-        self.mul_with_correlation(*rhs, Decimal::ZERO)
+        *self * *rhs
     }
 }
 
@@ -647,7 +879,17 @@ impl Div for SciNum {
     type Output = Self;
 
     fn div(self, rhs: Self) -> Self {
-        self.div_with_correlation(rhs, Decimal::ZERO)
+        let number = Decimal::try_from(self.number()).unwrap() / Decimal::try_from(rhs.number()).unwrap();
+        if self.is_exact() && rhs.is_exact() {
+           Self::from(number)
+        } else {
+            let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap().powu(2))
+                + (Decimal::try_from(rhs.relative_uncertainty()).unwrap().powu(2)))
+                .sqrt()
+                .unwrap()
+                * number.abs();
+            Self::from(number).with_uncertainty(uncertainty.into())
+        }
     }
 }
 
@@ -655,7 +897,7 @@ impl Div for &SciNum {
     type Output = SciNum;
 
     fn div(self, rhs: Self) -> SciNum {
-        self.div_with_correlation(*rhs, Decimal::ZERO)
+        *self / *rhs
     }
 }
 
@@ -725,7 +967,7 @@ macro_rules! impl_arithmetic_int {
             type Output = SciNum;
 
             fn add(self, rhs: $t) -> SciNum {
-                self.add_with_correlation(rhs.into(), Decimal::ZERO)
+                self + SciNum::from(rhs)
             }
         }
 
@@ -733,8 +975,7 @@ macro_rules! impl_arithmetic_int {
             type Output = SciNum;
 
             fn add(self, rhs: SciNum) -> SciNum {
-                let num: SciNum = self.into();
-                num.add_with_correlation(rhs, Decimal::ZERO)
+                SciNum::from(self) + rhs
             }
         }
 
@@ -742,7 +983,7 @@ macro_rules! impl_arithmetic_int {
             type Output = Self;
 
             fn sub(self, rhs: $t) -> SciNum {
-                self.sub_with_correlation(rhs.into(), Decimal::ZERO)
+                self - SciNum::from(rhs)
             }
         }
 
@@ -750,8 +991,7 @@ macro_rules! impl_arithmetic_int {
             type Output = SciNum;
 
             fn sub(self, rhs: SciNum) -> SciNum {
-                let num: SciNum = self.into();
-                num.sub_with_correlation(rhs, Decimal::ZERO)
+                SciNum::from(self) - rhs
             }
         }
 
@@ -759,7 +999,7 @@ macro_rules! impl_arithmetic_int {
             type Output = Self;
 
             fn mul(self, rhs: $t) -> SciNum {
-                self.mul_with_correlation(rhs.into(), Decimal::ZERO)
+                self * SciNum::from(rhs)
             }
         }
 
@@ -767,8 +1007,7 @@ macro_rules! impl_arithmetic_int {
             type Output = SciNum;
 
             fn mul(self, rhs: SciNum) -> SciNum {
-                let num: SciNum = self.into();
-                num.mul_with_correlation(rhs, Decimal::ZERO)
+                SciNum::from(self) * rhs
             }
         }
 
@@ -776,7 +1015,7 @@ macro_rules! impl_arithmetic_int {
             type Output = Self;
 
             fn div(self, rhs: $t) -> SciNum {
-                self.div_with_correlation(rhs.into(), Decimal::ZERO)
+                self / SciNum::from(rhs)
             }
         }
 
@@ -784,8 +1023,7 @@ macro_rules! impl_arithmetic_int {
             type Output = SciNum;
 
             fn div(self, rhs: SciNum) -> SciNum {
-                let num: SciNum = self.into();
-                num.div_with_correlation(rhs, Decimal::ZERO)
+                SciNum::from(self) / rhs
             }
         }
     };
