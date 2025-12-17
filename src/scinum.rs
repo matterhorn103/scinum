@@ -21,7 +21,8 @@ use crate::error::SciNumError;
 /// types and provide the precision of 64-bit formats while also propagating
 /// uncertainties across arithmetic operations.
 /// `SciNum` uses a 64-bit significand in binary integer format (providing
-/// 18 decimal digits of precision) and a 16-bit signed exponent.
+/// 16 decimal digits of precision) and an exponent from −16383 to 16384 
+/// (represented as a 15-bit biased unsigned integer).
 /// As such, all values covered by the IEEE 754-2008 `binary64` (i.e. `f64`)
 /// and `decimal64` formats are representable.
 ///
@@ -29,16 +30,29 @@ use crate::error::SciNumError;
 /// enabling typical scientific calculations.
 #[derive(Copy, Clone, Debug, serde_with::DeserializeFromStr, serde_with::SerializeDisplay)]
 pub struct SciNum {
-    negative: bool,
-    exponent: i16,
-    uncertainty_scale: u8, // This will allow the uncertainty to have a different precision, but for the moment must always be 0
     uncertainty: u32,
+    uncertainty_scale: u8, // This will allow the uncertainty to have a different precision, but for the moment must always be 0
+    // Have the uncertainty come first so that the bits used for comparisons are
+    // the 80/81 least significant bits, just like in IEEE floating point formats
+    negative: bool,
+    exponent: u16, // Biased 15-bit exponent with bias b = 2^14 - 1 = 16383
     significand: u64,
 }
+
+// Only use 15 of the 16 bits so that we can fit the sign and exponent into 16
+// bits later if so desired
+const UEXPONENT_BIAS: u16 = 16383;
+const EXPONENT_BIAS: i16 = 16383;
+const MIN_EXPONENT: i16 = -16383;
+const MAX_EXPONENT: i16 = 16384;
 
 impl SciNum {
     /// Creates an exact `SciNum` from parts corresponding to _m_ ×
     /// 10<sup><i>n</i></sup>.
+    /// 
+    /// # Panics
+    /// 
+    /// This function panics if `exponent` is outside of the range −16383 to 16384.
     ///
     /// # Example
     ///
@@ -49,11 +63,14 @@ impl SciNum {
     /// assert_eq!(n.to_string(), "0.251");
     /// ```
     pub fn new(number: i128, exponent: i16) -> Self {
+        if !(MIN_EXPONENT..=MAX_EXPONENT).contains(&exponent) {
+            panic!()
+        }
         Self {
-            negative: number.is_negative(),
-            exponent,
-            uncertainty_scale: 0,
             uncertainty: 0,
+            uncertainty_scale: 0,
+            negative: number.is_negative(),
+            exponent: (exponent + EXPONENT_BIAS) as u16,
             significand: number.unsigned_abs() as u64,
         }
     }
@@ -63,6 +80,10 @@ impl SciNum {
     ///
     /// This means the number of decimal places in the number and uncertainty
     /// will be the same in the created `SciNum`.
+    /// 
+    /// # Panics
+    /// 
+    /// This function panics if `exponent` is outside of the range −16383 to 16384.
     ///
     /// # Example
     ///
@@ -73,11 +94,14 @@ impl SciNum {
     /// assert_eq!(n.to_string(), "0.251(3)");
     /// ```
     pub fn new_with_uncertainty(number: i128, uncertainty: u32, exponent: i16) -> Self {
+        if !(MIN_EXPONENT..=MAX_EXPONENT).contains(&exponent) {
+            panic!()
+        }
         Self {
-            negative: number.is_negative(),
-            exponent,
-            uncertainty_scale: 0,
             uncertainty,
+            uncertainty_scale: 0,
+            negative: number.is_negative(),
+            exponent: (exponent + EXPONENT_BIAS) as u16,
             significand: number.unsigned_abs() as u64,
         }
     }
@@ -127,7 +151,8 @@ impl SciNum {
     /// 
     /// # Panics
     /// 
-    /// This function panics if the overall significand does not fit into `u64`.
+    /// This function panics if the overall significand does not fit into `u64`,
+    /// or if `exponent` is outside of the range −16383 to 16384.
     ///
     /// # Example
     ///
@@ -152,6 +177,9 @@ impl SciNum {
         uncertainty: u32,
         exponent: i16,
     ) -> Self {
+        if !(MIN_EXPONENT..=MAX_EXPONENT).contains(&exponent) {
+            panic!()
+        }
         let unsigned_integer: u64 = integer.unsigned_abs().into();
         let (significand, exponent) = {
             if fraction != 0 {
@@ -164,10 +192,10 @@ impl SciNum {
             }
         };
         Self {
-            negative: integer.is_negative(),
-            exponent,
-            uncertainty_scale: 0,
             uncertainty,
+            uncertainty_scale: 0,
+            negative: integer.is_negative(),
+            exponent: (exponent + EXPONENT_BIAS) as u16,
             significand,
         }
     }
@@ -191,7 +219,7 @@ impl SciNum {
         let figs_in_frac = frac.checked_ilog10().map_or(0, |x| x + 1);
         let zeros = (figs - 1 - figs_in_frac) as u8; // 1 is for integer digit
         let uncert = self.uncertainty;
-        let exp = self.exponent - (figs as i16 - 1);
+        let exp = self.exponent() - (figs as i16 - 1);
         (int, zeros, frac, uncert, exp)
     }
 
@@ -199,8 +227,8 @@ impl SciNum {
     #[inline]
     pub fn number(&self) -> Self {
         Self {
-            uncertainty_scale: 0,
             uncertainty: 0,
+            uncertainty_scale: 0,
             ..*self
         }
     }
@@ -211,10 +239,10 @@ impl SciNum {
     #[inline]
     pub fn uncertainty(&self) -> Self {
         Self {
+            uncertainty: 0,
+            uncertainty_scale: 0,
             negative: false,
             exponent: self.exponent,
-            uncertainty_scale: 0,
-            uncertainty: 0,
             significand: self.uncertainty.into(),
         }
     }
@@ -246,8 +274,8 @@ impl SciNum {
     ///
     /// Corresponds to representation of the number as `mmmmm × 10^nn`.
     #[inline]
-    pub fn exponent_integral(&self) -> i16 {
-        self.exponent
+    pub fn exponent(&self) -> i16 {
+        self.exponent as i16 - EXPONENT_BIAS
     }
 
     // Returns the significand _m_ of the number when represented with
@@ -291,7 +319,7 @@ impl SciNum {
     /// - 200 returns 2 or 1 or 0, depending on the precision of the number
     #[inline]
     pub fn precision(&self) -> i16 {
-        self.exponent
+        self.exponent()
     }
 
     /// Returns true if the `SciNum` has an uncertainty of zero.
@@ -725,12 +753,12 @@ impl TryFrom<SciNum> for Decimal {
     /// 
     /// Fails if `n` has a positive exponent or an exponent lower than −28.
     fn try_from(n: SciNum) -> Result<Decimal, rust_decimal::Error> {
-        if n.exponent.is_positive() {
+        if n.exponent > UEXPONENT_BIAS {
             Err(rust_decimal::Error::ConversionTo("Decimal".to_string()))
         } else {
             Decimal::try_from_i128_with_scale(
                 n.significand_integral(),
-                n.exponent.unsigned_abs().into(),
+                n.exponent().unsigned_abs().into(),
             )
         }
     }
@@ -1102,10 +1130,10 @@ impl FromStr for SciNum {
         let exponent = caps.get(5).map_or(Ok(0), |m| i16::from_str(m.as_str())).map_err(|_e| SciNumError::Parse(s.into()))?; // -7
         // "6.971e-7" should be represented as (6971, -10)
         Ok(Self {
-            negative,
-            exponent: exponent - (frac_places as i16),
-            uncertainty_scale: 0,
             uncertainty,
+            uncertainty_scale: 0,
+            negative,
+            exponent: (exponent + EXPONENT_BIAS) as u16 - frac_places as u16,
             significand,
         })
     }
