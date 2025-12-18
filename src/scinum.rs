@@ -502,7 +502,9 @@ impl SciNum {
             // Exponent is now too small
             self.exponent += 1;
             // Uncertainty is now too large
-            self.uncertainty_scale += 1;
+            if !self.is_exact() {
+                self.uncertainty_scale += 1;
+            };
         };
         self
     }
