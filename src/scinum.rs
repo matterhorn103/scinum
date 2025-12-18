@@ -21,8 +21,8 @@ use crate::error::SciNumError;
 /// types and provide the precision of 64-bit formats while also propagating
 /// uncertainties across arithmetic operations.
 /// `SciNum` uses a 64-bit significand in binary integer format (providing
-/// 16 decimal digits of precision) and an exponent from −16383 to 16384
-/// (represented as a 15-bit biased unsigned integer).
+/// 16 decimal digits of precision) and a 16-bit signed exponent with the same
+/// range as `i16` (but represented as a 16-bit biased unsigned integer).
 /// As such, all values covered by the IEEE 754-2008 `binary64` (i.e. `f64`)
 /// and `decimal64` formats are representable.
 ///
@@ -35,18 +35,52 @@ pub struct SciNum {
     // Have the uncertainty come first so that the bits used for comparisons are
     // the 81 least significant bits, just like in IEEE floating point formats
     negative: bool,
-    exponent: u16, // Biased 16-bit exponent with bias b = 2^15 - 1 = 32767
+    exponent: u16, // Biased 16-bit exponent with bias b = 2^15 = 32768
     significand: u64,
 }
 
-// Only use 15 of the 16 bits so that we can fit the sign and exponent into 16
-// bits later if so desired
-const UEXPONENT_BIAS: u16 = 32767;
-const UMIN_EXPONENT: u16 = 0;
-const UMAX_EXPONENT: u16 = u16::MAX;
-const EXPONENT_BIAS: i16 = 32767;
-const MIN_EXPONENT: i16 = -32767;
-const MAX_EXPONENT: i16 = 32767;
+/// The bias used to represent the signed exponent as an unsigned integer.
+///
+/// For the value of the bias, we deviate from the usual IEEE way of doing
+/// things ever so slightly and use 2^15 rather than 2^15 - 1.
+/// This allows the whole range of `i16` to be covered, so we don't have to worry
+/// about invalid input.
+/// It also means that unbiased `0_i16` corresponds to binary
+/// `0b1000000000000000` in the biased representation, `i16::MIN` corresponds to
+/// all 0s, and `i16::MAX` corresponds to all 1s.
+const EXPONENT_BIAS: u16 = 32768;
+
+/// Converts a signed, unbiased exponent to an unsigned, biased representation.
+fn bias_exponent(exponent: i16) -> u16 {
+    if exponent.is_zero() {
+        EXPONENT_BIAS
+    } else {
+        let unsigned = exponent.unsigned_abs();
+        if exponent.is_positive() {
+            EXPONENT_BIAS + unsigned
+        } else {
+            EXPONENT_BIAS - unsigned
+        }
+    }
+}
+
+/// Converts an unsigned, biased exponent back to the corresponding signed value.
+fn unbias_exponent(exponent: u16) -> i16 {
+    if exponent == EXPONENT_BIAS {
+        0
+    } else if exponent > EXPONENT_BIAS {
+        // positive
+        let unsigned = exponent - EXPONENT_BIAS;
+        unsigned as i16
+    } else if exponent == 0 {
+        // negative but special case
+        i16::MIN
+    } else {
+        // negative
+        let unsigned = EXPONENT_BIAS - exponent;
+        -(unsigned as i16)
+    }
+}
 
 const MIN_SIGNIFICAND: u64 = 0;
 const MAX_SIGNIFICAND: u64 = u64::MAX;
@@ -71,14 +105,14 @@ impl SciNum {
     /// assert_eq!(n.to_string(), "0.251");
     /// ```
     pub fn new(number: i128, exponent: i16) -> Self {
-        if !(MIN_EXPONENT..=MAX_EXPONENT).contains(&exponent) || !(MIN_NUMBER..=MAX_NUMBER).contains(&number) {
+        if !(MIN_NUMBER..=MAX_NUMBER).contains(&number) {
             panic!()
         }
         Self {
             uncertainty: 0,
             uncertainty_scale: 0,
             negative: number.is_negative(),
-            exponent: (exponent + EXPONENT_BIAS) as u16,
+            exponent: bias_exponent(exponent),
             significand: number.unsigned_abs() as u64,
         }
     }
@@ -103,14 +137,15 @@ impl SciNum {
     /// assert_eq!(n.to_string(), "0.251(3)");
     /// ```
     pub fn new_with_uncertainty(number: i128, uncertainty: u32, exponent: i16) -> Self {
-        if !(MIN_EXPONENT..=MAX_EXPONENT).contains(&exponent) || !(MIN_NUMBER..=MAX_NUMBER).contains(&number) {
+        if !(MIN_NUMBER..=MAX_NUMBER).contains(&number)
+        {
             panic!()
         }
         Self {
             uncertainty,
             uncertainty_scale: 0,
             negative: number.is_negative(),
-            exponent: (exponent + EXPONENT_BIAS) as u16,
+            exponent: bias_exponent(exponent),
             significand: number.unsigned_abs() as u64,
         }
     }
@@ -168,8 +203,7 @@ impl SciNum {
     ///
     /// # Panics
     ///
-    /// This function panics if the overall significand does not fit into `u64`,
-    /// or if `exponent` is outside of the range −16383 to 16384.
+    /// This function panics if the overall significand does not fit into `u64`.
     ///
     /// # Example
     ///
@@ -194,9 +228,6 @@ impl SciNum {
         uncertainty: u32,
         exponent: i16,
     ) -> Self {
-        if !(MIN_EXPONENT..=MAX_EXPONENT).contains(&exponent) {
-            panic!()
-        }
         let unsigned_integer: u64 = integer.unsigned_abs().into();
         let (significand, exponent) = {
             if fraction != 0 {
@@ -213,7 +244,7 @@ impl SciNum {
             uncertainty,
             uncertainty_scale: 0,
             negative: integer.is_negative(),
-            exponent: (exponent + EXPONENT_BIAS) as u16,
+            exponent: bias_exponent(exponent),
             significand,
         }
     }
@@ -302,8 +333,7 @@ impl SciNum {
     /// Corresponds to representation of the number as `mmmmm × 10^nn`.
     #[inline]
     pub fn exponent(&self) -> i16 {
-        dbg!(self.exponent);
-        self.exponent as i16 - EXPONENT_BIAS
+        unbias_exponent(self.exponent)
     }
 
     // Returns the significand _m_ of the number when represented with
@@ -856,12 +886,12 @@ impl TryFrom<SciNum> for Decimal {
     ///
     /// Fails if `n` has a positive exponent or an exponent lower than −28.
     fn try_from(n: SciNum) -> Result<Decimal, rust_decimal::Error> {
-        if n.exponent > UEXPONENT_BIAS {
+        if n.exponent > EXPONENT_BIAS {
             Err(rust_decimal::Error::ConversionTo("Decimal".to_string()))
         } else {
             Decimal::try_from_i128_with_scale(
                 n.significand_signed(),
-                n.exponent().unsigned_abs().into(),
+                (EXPONENT_BIAS - n.exponent).into(),
             )
         }
     }
@@ -1247,7 +1277,8 @@ impl fmt::Display for SciNum {
         // If the number has more than five places,
         // or insignificant zeros before the decimal point,
         // display in scientific notation
-        if self.precision_most_significant_fig() <= 5 && self.precision_most_significant_fig() >= -5 {
+        if self.precision_most_significant_fig() <= 5 && self.precision_most_significant_fig() >= -5
+        {
             if self.precision() == 0 {
                 write!(f, "{significand}{uncertainty}")
             } else {
@@ -1305,7 +1336,7 @@ impl FromStr for SciNum {
             uncertainty,
             uncertainty_scale: 0,
             negative,
-            exponent: (exponent + EXPONENT_BIAS) as u16 - frac_places as u16,
+            exponent: bias_exponent(exponent) - frac_places as u16,
             significand,
         })
     }
@@ -1322,7 +1353,7 @@ impl SciNum {
     /// A constant representing 0.
     pub const ZERO: SciNum = SciNum {
         negative: false,
-        exponent: UEXPONENT_BIAS,
+        exponent: EXPONENT_BIAS,
         uncertainty_scale: 0,
         uncertainty: 0,
         significand: 0,
@@ -1331,7 +1362,7 @@ impl SciNum {
     /// A constant representing 1.
     pub const ONE: SciNum = SciNum {
         negative: false,
-        exponent: UEXPONENT_BIAS,
+        exponent: EXPONENT_BIAS,
         uncertainty_scale: 0,
         uncertainty: 0,
         significand: 1,
@@ -1340,7 +1371,7 @@ impl SciNum {
     /// The highest supported number.
     pub const MAX: SciNum = SciNum {
         negative: false,
-        exponent: UMAX_EXPONENT,
+        exponent: u16::MAX,
         uncertainty_scale: 0,
         uncertainty: 0,
         significand: u64::MAX,
@@ -1349,7 +1380,7 @@ impl SciNum {
     /// The lowest supported number.
     pub const MIN: SciNum = SciNum {
         negative: true,
-        exponent: UMAX_EXPONENT,
+        exponent: 0,
         uncertainty_scale: 0,
         uncertainty: 0,
         significand: u64::MAX,
@@ -1447,6 +1478,31 @@ mod tests {
 
         let n3 = SciNum::new_with_uncertainty(1000, 15, 0);
         assert_eq!(n3.relative_uncertainty(), SciNum::new(15, -3));
+    }
+
+    #[test]
+    fn bias_unbias_exponent() {
+        // Bias
+        assert_eq!(bias_exponent(0), 32768);
+        assert_eq!(bias_exponent(i16::MIN), 0);
+        assert_eq!(bias_exponent(i16::MAX), u16::MAX);
+        assert_eq!(bias_exponent(1), 32769);
+        assert_eq!(bias_exponent(-1), 32767);
+        assert_eq!(bias_exponent(101), 32869);
+        assert_eq!(bias_exponent(-101), 32667);
+        // Unbias
+        assert_eq!(unbias_exponent(32768), 0);
+        assert_eq!(unbias_exponent(0), i16::MIN);
+        assert_eq!(unbias_exponent(u16::MAX), i16::MAX);
+        assert_eq!(unbias_exponent(32769), 1);
+        assert_eq!(unbias_exponent(32767), -1);
+        assert_eq!(unbias_exponent(32869), 101);
+        assert_eq!(unbias_exponent(32667), -101);
+        // Round trip
+        assert_eq!(unbias_exponent(bias_exponent(-46)), -46);
+        assert_eq!(unbias_exponent(bias_exponent(13)), 13);
+        assert_eq!(unbias_exponent(bias_exponent(32765)), 32765);
+        assert_eq!(unbias_exponent(bias_exponent(-32765)), -32765);
     }
 
     #[test]
@@ -1664,7 +1720,7 @@ mod tests {
         assert_eq!(n1.powi(3), sci!(64));
         assert_eq!(n1.powi(-1), sci!(0.25));
         assert_eq!(n1.powi(-2), sci!(0.0625));
-        
+
         let n2 = SciNum::new_with_uncertainty(20, 2, 0);
         let result = n2.powi(2);
         assert_eq!(result.number(), sci!(400));
