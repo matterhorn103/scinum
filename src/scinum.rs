@@ -126,12 +126,8 @@ impl SciNum {
     /// assert_eq!(n, SciNum::new_with_uncertainty(251, 3, -3));
     #[inline]
     pub fn with_uncertainty(mut self, uncertainty: Self) -> Self {
-        let uncertainty_scale = self.exponent - uncertainty.exponent;
-        if uncertainty_scale != 0 {
-            todo!("Currently, an uncertainty must have the same precision as the number itself!")
-        } else {
-            self.uncertainty = uncertainty.significand.try_into().expect("The uncertainty may not have a significand greater than `u32::MAX`!");
-        }
+        self.uncertainty_scale = (self.exponent - uncertainty.exponent).try_into().expect("Difference in precision of number and uncertainty should never be this large!");
+        self.uncertainty = uncertainty.significand.try_into().expect("The uncertainty may not have a significand greater than `u32::MAX`!");
         self
     }
     
@@ -213,7 +209,7 @@ impl SciNum {
         if self.is_zero() {
             return (0, 0, 0, 0, 0)
         };
-        let figs = self.sigfigs();
+        let figs = self.sigfigs() as u32;
         let int_unsigned = self.significand / 10_u64.pow(figs - 1); // First digit
         let int = if self.negative {-(int_unsigned as i8)} else { int_unsigned as i8 };
         let frac = self.significand % 10_u64.pow(figs - 1);
@@ -310,9 +306,9 @@ impl SciNum {
     /// Returns the number of significant decimal digits in the significand.
     /// 0 is considered to have 0 significant figures.
     #[inline]
-    pub fn sigfigs(&self) -> u32 {
+    pub fn sigfigs(&self) -> u8 {
         if let Some(log) = self.significand.checked_ilog10() {
-            log + 1
+            log as u8 + 1
         } else {
             0
         }
@@ -483,6 +479,32 @@ impl SciNum {
                 * number.abs();
             Self::from(number).with_uncertainty(uncertainty.into())
         }
+    }
+}
+
+// Rounding functions
+impl SciNum {
+    /// Removes significant figures from the significand until the desired number
+    /// is reached.
+    /// 
+    /// Equivalent to rounding towards zero.
+    /// 
+    /// The uncertainty of the `SciNum` is left unchanged.
+    /// 
+    /// # Panics
+    /// 
+    /// This function panics if the `SciNum` already has fewer significant figures
+    /// than the requested number.
+    pub fn truncate_sf(mut self, sf: u8) -> Self {
+        if self.sigfigs() < sf { panic!() };
+        while self.sigfigs() > sf {
+            self.significand /= 10;
+            // Exponent is now too small
+            self.exponent += 1;
+            // Uncertainty is now too large
+            self.uncertainty_scale += 1;
+        };
+        self
     }
 }
 
@@ -1124,7 +1146,7 @@ impl fmt::Display for SciNum {
                 write!(f, "{significand}{uncertainty}")
             } else {
                 // 3.25e-2 is (325, -4), should be formatted as 0.0325
-                let zeros = "0".repeat((u32::from(self.precision().unsigned_abs()) - self.sigfigs()).try_into().unwrap());
+                let zeros = "0".repeat((self.precision().unsigned_abs() - self.sigfigs() as u16).into());
                 write!(f, "0.{zeros}{significand}{uncertainty}")
             }
         // Otherwise, use scientific notation
@@ -1371,6 +1393,26 @@ mod tests {
         assert_eq!(SciNum::new(200, 3), SciNum::new(2, 5));
         // Same value but different precision, small numbers
         assert_eq!(SciNum::new(200, 3), SciNum::new(2, 5));
+    }
+
+    #[test]
+    fn truncate_sf() {
+        // Positive
+        let n = sci!(25.6949);
+        assert_eq!(n.truncate_sf(2), sci!(25));
+        assert_eq!(n.truncate_sf(3), sci!(25.6));
+        // Negative
+        let n = sci!(-3.794718);
+        assert_eq!(n.truncate_sf(4), sci!(-3.794));
+        assert_eq!(n.truncate_sf(3), sci!(-3.79));
+        // Integer
+        let n = sci!(4327890);
+        assert_eq!(n.truncate_sf(4), sci!(4.327e6));
+        assert_eq!(n.truncate_sf(5), sci!(4.3278e6));
+        // Smaller than 1
+        let n = sci!(0.4327890);
+        assert_eq!(n.truncate_sf(4), sci!(4.327e-1));
+        assert_eq!(n.truncate_sf(5), sci!(4.3278e-1));
     }
 
     #[test]
