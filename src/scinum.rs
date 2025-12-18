@@ -1610,38 +1610,41 @@ mod tests {
     #[test]
     fn from_str() {
         // Integer
-        assert_eq!(SciNum::from_str("42").unwrap(), SciNum::from(dec!(42)));
+        assert_eq!(SciNum::from_str("42").unwrap(), SciNum::new(42, 0));
         // Negative float
         assert_eq!(
             SciNum::from_str("-3.14").unwrap(),
-            SciNum::from(dec!(-3.14))
+            SciNum::new(-314, -2)
         );
         // Scientific notation
         assert_eq!(
             SciNum::from_str("1.5e8").unwrap(),
-            SciNum::from(dec!(1.5e8))
+            SciNum::new(15, 7)
         );
         // TODO large exponent fails with overflow error
-        //assert_eq!(SciNum::from_str("1.5e10").unwrap(),
-        // SciNum::from(dec!(1.5e10))); Scientific notation with negative
-        // exponent
+        assert_eq!(
+            SciNum::from_str("1.5e10").unwrap(),
+            SciNum::new(15, 9)
+        );
+        // Scientific notation with negative exponent
         assert_eq!(
             SciNum::from_str("2e-5").unwrap(),
-            SciNum::from(dec!(2e-5))
+            SciNum::new(2, -5)
         );
         // Negative number with positive exponent
         assert_eq!(
             SciNum::from_str("-6.022e6").unwrap(),
-            SciNum::from(dec!(-6.022e6))
+            SciNum::new(-6022, 3)
         );
-        // TODO large exponent fails with overflow error
+        // Large exponent
         assert_eq!(
             SciNum::from_str("-6.022e23").unwrap(),
-            SciNum::from(dec!(-6.022e23)));
+            SciNum::new(-6022, 20)
+        );
         // Capital E for exponent
         assert_eq!(
             SciNum::from_str("1.5E8").unwrap(),
-            SciNum::from(dec!(1.5E8))
+            SciNum::new(15, 7)
         );
         // Make sure incorrectly formatted string fails
         assert!(SciNum::from_str("not a number").is_err());
