@@ -356,98 +356,98 @@ impl SciNum {
         Some(dec.into())
     }
 
-    pub fn add_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    where
-        T: Into<Decimal>,
-    {
-        let number = Decimal::try_from(self.number()).unwrap() + Decimal::try_from(rhs.number()).unwrap();
-        if self.is_exact() && rhs.is_exact() {
-            Self::from(number)
-        } else {
-            let sigma_ab = correlation.into()
-                * Decimal::try_from(self.uncertainty()).unwrap()
-                * Decimal::try_from(rhs.uncertainty()).unwrap();
-            let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
-                + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2))
-                + (Decimal::TWO * sigma_ab))
-                .sqrt()
-                .unwrap();
-            Self::from(number).with_uncertainty(uncertainty.into())
-        }
-    }
+    //pub fn add_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
+    //where
+    //    T: Into<Decimal>,
+    //{
+    //    let number = Decimal::try_from(self.number()).unwrap() + Decimal::try_from(rhs.number()).unwrap();
+    //    if self.is_exact() && rhs.is_exact() {
+    //        Self::from(number)
+    //    } else {
+    //        let sigma_ab = correlation.into()
+    //            * Decimal::try_from(self.uncertainty()).unwrap()
+    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
+    //        let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
+    //            + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2))
+    //            + (Decimal::TWO * sigma_ab))
+    //            .sqrt()
+    //            .unwrap();
+    //        Self::from(number).with_uncertainty(uncertainty.into())
+    //    }
+    //}
 
-    pub fn sub_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    where
-        T: Into<Decimal>,
-    {
-        let number = Decimal::try_from(self.number()).unwrap() - Decimal::try_from(rhs.number()).unwrap();
-        if self.is_exact() && rhs.is_exact() {
-            Self::from(number)
-        } else {
-            let sigma_ab = correlation.into()
-                * Decimal::try_from(self.uncertainty()).unwrap()
-                * Decimal::try_from(rhs.uncertainty()).unwrap();
-            let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
-                + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2))
-                - (Decimal::TWO * sigma_ab))
-                .sqrt()
-                .unwrap();
-            Self::from(number).with_uncertainty(uncertainty.into())
-        }
-    }
+    //pub fn sub_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
+    //where
+    //    T: Into<Decimal>,
+    //{
+    //    let number = Decimal::try_from(self.number()).unwrap() - Decimal::try_from(rhs.number()).unwrap();
+    //    if self.is_exact() && rhs.is_exact() {
+    //        Self::from(number)
+    //    } else {
+    //        let sigma_ab = correlation.into()
+    //            * Decimal::try_from(self.uncertainty()).unwrap()
+    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
+    //        let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
+    //            + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2))
+    //            - (Decimal::TWO * sigma_ab))
+    //            .sqrt()
+    //            .unwrap();
+    //        Self::from(number).with_uncertainty(uncertainty.into())
+    //    }
+    //}
 
-    pub fn mul_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    where
-        T: Into<Decimal>,
-    {
-        let number = Decimal::try_from(self.number()).unwrap() * Decimal::try_from(rhs.number()).unwrap();
-        if self.is_exact() && rhs.is_exact() {
-            Self::from(number)
-        } else {
-            let sigma_ab = correlation.into()
-                * Decimal::try_from(self.uncertainty()).unwrap()
-                * Decimal::try_from(rhs.uncertainty()).unwrap();
-            let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap().powu(2))
-                + (Decimal::try_from(rhs.relative_uncertainty()).unwrap().powu(2))
-                + (Decimal::TWO * sigma_ab / number))
-                .sqrt()
-                .unwrap()
-                * number.abs();
-            Self::from(number).with_uncertainty(uncertainty.into())
-        }
-    }
+    //pub fn mul_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
+    //where
+    //    T: Into<Decimal>,
+    //{
+    //    let number = Decimal::try_from(self.number()).unwrap() * Decimal::try_from(rhs.number()).unwrap();
+    //    if self.is_exact() && rhs.is_exact() {
+    //        Self::from(number)
+    //    } else {
+    //        let sigma_ab = correlation.into()
+    //            * Decimal::try_from(self.uncertainty()).unwrap()
+    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
+    //        let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap().powu(2))
+    //            + (Decimal::try_from(rhs.relative_uncertainty()).unwrap().powu(2))
+    //            + (Decimal::TWO * sigma_ab / number))
+    //            .sqrt()
+    //            .unwrap()
+    //            * number.abs();
+    //        Self::from(number).with_uncertainty(uncertainty.into())
+    //    }
+    //}
 
-    pub fn div_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    where
-        T: Into<Decimal>,
-    {
-        let number = Decimal::try_from(self.number()).unwrap() / Decimal::try_from(rhs.number()).unwrap();
-        if self.is_exact() && rhs.is_exact() {
-           Self::from(number)
-        } else {
-            let sigma_ab = correlation.into()
-                * Decimal::try_from(self.uncertainty()).unwrap()
-                * Decimal::try_from(rhs.uncertainty()).unwrap();
-            let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap().powu(2))
-                + (Decimal::try_from(rhs.relative_uncertainty()).unwrap().powu(2))
-                - (Decimal::TWO * sigma_ab / number))
-                .sqrt()
-                .unwrap()
-                * number.abs();
-            Self::from(number).with_uncertainty(uncertainty.into())
-        }
-    }
+    //pub fn div_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
+    //where
+    //    T: Into<Decimal>,
+    //{
+    //    let number = Decimal::try_from(self.number()).unwrap() / Decimal::try_from(rhs.number()).unwrap();
+    //    if self.is_exact() && rhs.is_exact() {
+    //       Self::from(number)
+    //    } else {
+    //        let sigma_ab = correlation.into()
+    //            * Decimal::try_from(self.uncertainty()).unwrap()
+    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
+    //        let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap().powu(2))
+    //            + (Decimal::try_from(rhs.relative_uncertainty()).unwrap().powu(2))
+    //            - (Decimal::TWO * sigma_ab / number))
+    //            .sqrt()
+    //            .unwrap()
+    //            * number.abs();
+    //        Self::from(number).with_uncertainty(uncertainty.into())
+    //    }
+    //}
 
-    #[inline]
-    pub fn powd(self, rhs: Decimal) -> Self {
-        self.pow_with_correlation(rhs.into(), Decimal::ZERO)
-    }
+    //#[inline]
+    //pub fn powd(self, rhs: Decimal) -> Self {
+    //    self.pow_with_correlation(rhs.into(), Decimal::ZERO)
+    //}
 
-    #[inline]
-    pub fn powfloat(self, rhs: f64) -> Self {
-        let rhs = Self::from_f64(rhs).unwrap();
-        self.pow_with_correlation(rhs, Decimal::ZERO)
-    }
+    //#[inline]
+    //pub fn powfloat(self, rhs: f64) -> Self {
+    //    let rhs = Self::from_f64(rhs).unwrap();
+    //    self.pow_with_correlation(rhs, Decimal::ZERO)
+    //}
 
     //#[inline]
     //pub fn powfrac(self, rhs: Frac) -> Self {
@@ -457,29 +457,29 @@ impl SciNum {
     //    self.powd(rhs)
     //}
 
-    pub fn pow_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    where
-        T: Into<Decimal>,
-    {
-        let number = Decimal::try_from(self.number()).unwrap().powd(Decimal::try_from(rhs.number()).unwrap());
-        if self.is_exact() && rhs.is_exact() {
-            Self::from(number)
-        } else {
-            let sigma_ab = correlation.into()
-                * Decimal::try_from(self.uncertainty()).unwrap()
-                * Decimal::try_from(rhs.uncertainty()).unwrap();
-            let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap() * Decimal::try_from(rhs.number()).unwrap()).powu(2)
-                + (Decimal::try_from(self.number()).unwrap().ln() * Decimal::try_from(rhs.uncertainty()).unwrap()).powu(2)
-                + (Decimal::TWO
-                    * ((Decimal::try_from(self.number()).unwrap().ln() * Decimal::try_from(rhs.number()).unwrap())
-                        / Decimal::try_from(self.number()).unwrap())
-                    * sigma_ab))
-                .sqrt()
-                .unwrap()
-                * number.abs();
-            Self::from(number).with_uncertainty(uncertainty.into())
-        }
-    }
+    //pub fn pow_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
+    //where
+    //    T: Into<Decimal>,
+    //{
+    //    let number = Decimal::try_from(self.number()).unwrap().powd(Decimal::try_from(rhs.number()).unwrap());
+    //    if self.is_exact() && rhs.is_exact() {
+    //        Self::from(number)
+    //    } else {
+    //        let sigma_ab = correlation.into()
+    //            * Decimal::try_from(self.uncertainty()).unwrap()
+    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
+    //        let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap() * Decimal::try_from(rhs.number()).unwrap()).powu(2)
+    //            + (Decimal::try_from(self.number()).unwrap().ln() * Decimal::try_from(rhs.uncertainty()).unwrap()).powu(2)
+    //            + (Decimal::TWO
+    //                * ((Decimal::try_from(self.number()).unwrap().ln() * Decimal::try_from(rhs.number()).unwrap())
+    //                    / Decimal::try_from(self.number()).unwrap())
+    //                * sigma_ab))
+    //            .sqrt()
+    //            .unwrap()
+    //            * number.abs();
+    //        Self::from(number).with_uncertainty(uncertainty.into())
+    //    }
+    //}
 }
 
 // Rounding functions
@@ -609,7 +609,7 @@ impl SciNum {
 
     #[inline]
     pub fn powi(self, rhs: i32) -> Self {
-        self.powd(rhs.into())
+        todo!()
     }
 
     //fn powf(self, n: Self) -> Self {
@@ -1015,7 +1015,7 @@ impl Pow<Self> for SciNum {
     type Output = Self;
 
     fn pow(self, rhs: Self) -> Self {
-        self.pow_with_correlation(rhs, Decimal::ZERO)
+        todo!()
     }
 }
 
@@ -1023,7 +1023,7 @@ impl Pow<Self> for &SciNum {
     type Output = SciNum;
 
     fn pow(self, rhs: Self) -> SciNum {
-        self.pow_with_correlation(*rhs, Decimal::ZERO)
+        todo!()
     }
 }
 
@@ -1418,27 +1418,13 @@ mod tests {
     }
 
     #[test]
-    fn addition_fn_exact() {
+    fn addition() {
+        // Exact
         let n1 = SciNum::new(40, 0);
         let n2 = sci!(5.1);
-        let result = n1.add_with_correlation(n2, 0);
+        let result = n1 + n2;
         assert_eq!(result, sci!(45.1));
-    }
-
-    #[test]
-    fn addition_fn() {
-        let n1 = SciNum::new_with_uncertainty(20, 2, 0);
-        let n2 = SciNum::new_with_uncertainty(30, 5, 0);
-        let result = n1.add_with_correlation(n2, 0);
-        assert_eq!(result.number(), sci!(50));
-        assert_eq!(
-            Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
-            dec!(5.3851648071345).round_dp(5)
-        );
-    }
-
-    #[test]
-    fn addition_op() {
+        // With uncertainties
         let n1 = SciNum::new_with_uncertainty(20, 2, 0);
         let n2 = SciNum::new_with_uncertainty(30, 5, 0);
         let result = n1 + n2;
@@ -1539,9 +1525,9 @@ mod tests {
     fn exponentiation() {
         let n1 = SciNum::new_with_uncertainty(20, 2, 0);
 
-        let result = n1.powd(Decimal::TWO);
-        assert_eq!(result.number(), sci!(400));
-        assert_eq!(result.uncertainty(), sci!(80));
+        //let result = n1.powd(Decimal::TWO);
+        //assert_eq!(result.number(), sci!(400));
+        //assert_eq!(result.uncertainty(), sci!(80));
 
         let result = n1.powi(2);
         assert_eq!(result.number(), sci!(400));
