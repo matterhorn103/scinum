@@ -31,7 +31,7 @@ use crate::error::SciNumError;
 #[derive(Copy, Clone, Debug, serde_with::DeserializeFromStr, serde_with::SerializeDisplay)]
 pub struct SciNum {
     uncertainty: u32,
-    uncertainty_scale: u8, // This will allow the uncertainty to have a different precision, but for the moment must always be 0
+    uncertainty_scale: u8, // This allows the uncertainty to have a different precision
     // Have the uncertainty come first so that the bits used for comparisons are
     // the 80/81 least significant bits, just like in IEEE floating point formats
     negative: bool,
@@ -111,10 +111,8 @@ impl SciNum {
     /// Creates a new `SciNum` with the same number but the provided
     /// uncertainty.
     /// 
-    /// # Panics
-    /// 
-    /// This function panics if the uncertainty has a significand greater than
-    /// `u32::MAX` (i.e. more than ~9 decimal places).
+    /// If the uncertainty has a significand greater than `u32::MAX` (i.e. more
+    /// than ~9 significant figures), it is first truncated to 9 s.f.
     ///
     /// # Example
     ///
@@ -126,8 +124,11 @@ impl SciNum {
     /// assert_eq!(n, SciNum::new_with_uncertainty(251, 3, -3));
     #[inline]
     pub fn with_uncertainty(mut self, uncertainty: Self) -> Self {
-        self.uncertainty_scale = (self.exponent - uncertainty.exponent).try_into().expect("Difference in precision of number and uncertainty should never be this large!");
-        self.uncertainty = uncertainty.significand.try_into().expect("The uncertainty may not have a significand greater than `u32::MAX`!");
+        let narrowed_uncertainty = if uncertainty.significand > u32::MAX.into() {
+            uncertainty.truncate_sf(9)
+        } else { uncertainty };
+        self.uncertainty_scale = (self.exponent - narrowed_uncertainty.exponent).try_into().expect("Difference in precision of number and uncertainty should never be this large!");
+        self.uncertainty = narrowed_uncertainty.significand.try_into().expect("Already made sure that this is not greater than `u32::MAX`");
         self
     }
     
@@ -256,8 +257,7 @@ impl SciNum {
     /// The relative uncertainty is always positive.
     #[inline]
     pub(crate) fn relative_uncertainty(&self) -> Self {
-        todo!();
-        //self.uncertainty() / self.number().abs()
+        self.uncertainty() / self.number().abs()
     }
 
     /// Returns the significand _m_ of the number when represented with _m_ as
