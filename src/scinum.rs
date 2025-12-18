@@ -7,7 +7,7 @@ use std::{
     str::FromStr,
 };
 
-use num_traits::{FromPrimitive, Inv, Num, One, Pow, Zero, real::Real};
+use num_traits::{FromPrimitive, Inv, Num, One, Pow, Zero};
 use regex::Regex;
 use rust_decimal::{Decimal, MathematicalOps};
 
@@ -21,7 +21,7 @@ use crate::error::SciNumError;
 /// types and provide the precision of 64-bit formats while also propagating
 /// uncertainties across arithmetic operations.
 /// `SciNum` uses a 64-bit significand in binary integer format (providing
-/// 16 decimal digits of precision) and an exponent from −16383 to 16384 
+/// 16 decimal digits of precision) and an exponent from −16383 to 16384
 /// (represented as a 15-bit biased unsigned integer).
 /// As such, all values covered by the IEEE 754-2008 `binary64` (i.e. `f64`)
 /// and `decimal64` formats are representable.
@@ -51,9 +51,9 @@ const MAX_EXPONENT: i16 = 16384;
 impl SciNum {
     /// Creates an exact `SciNum` from parts corresponding to _m_ ×
     /// 10<sup><i>n</i></sup>.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// This function panics if `exponent` is outside of the range −16383 to 16384.
     ///
     /// # Example
@@ -82,9 +82,9 @@ impl SciNum {
     ///
     /// This means the number of decimal places in the number and uncertainty
     /// will be the same in the created `SciNum`.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// This function panics if `exponent` is outside of the range −16383 to 16384.
     ///
     /// # Example
@@ -110,7 +110,7 @@ impl SciNum {
 
     /// Creates a new `SciNum` with the same number but the provided
     /// uncertainty.
-    /// 
+    ///
     /// If the uncertainty has a significand greater than `u32::MAX` (i.e. more
     /// than ~9 significant figures), it is first truncated to 9 s.f.
     ///
@@ -126,30 +126,39 @@ impl SciNum {
     pub fn with_uncertainty(mut self, uncertainty: Self) -> Self {
         let narrowed_uncertainty = if uncertainty.significand > u32::MAX.into() {
             uncertainty.truncate_sf(9)
-        } else { uncertainty };
-        self.uncertainty_scale = (self.exponent - narrowed_uncertainty.exponent).try_into().expect("Difference in precision of number and uncertainty should never be this large!");
-        self.uncertainty = narrowed_uncertainty.significand.try_into().expect("Already made sure that this is not greater than `u32::MAX`");
+        } else {
+            uncertainty
+        };
+        self.uncertainty_scale = (self.exponent - narrowed_uncertainty.exponent)
+            .try_into()
+            .expect(
+                "Difference in precision of number and uncertainty should never be this large!",
+            );
+        self.uncertainty = narrowed_uncertainty
+            .significand
+            .try_into()
+            .expect("Already made sure that this is not greater than `u32::MAX`");
         self
     }
-    
+
     /// Creates a `SciNum` from separate parts of a representation of the number in
     /// scientific notation.
-    /// 
+    ///
     /// The arguments should correspond to `(ii, z, fff, uu, nn)` when the number is
     /// notated as `ii.{zeros}fff(uu) × 10^nn`, where `z` is the number of leading
     /// zeros in the fractional part.
-    /// 
+    ///
     /// Trailing zeros in `fraction` are treated as significant, but leading zeros
     /// are not. If `fraction` is simply `0`, it is then also treated as
     /// insignificant. Passing `0` for both `zeros` and `fraction` therefore
     /// creates a `SciNum` with a significand equal to `integer`.
-    /// 
+    ///
     /// To create a number with only significant zeros in the fractional part (such
     /// as `2.0`), pass `0` for `fraction` and specify the appropriate number of
     /// zeros as `zeros`.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// This function panics if the overall significand does not fit into `u64`,
     /// or if `exponent` is outside of the range −16383 to 16384.
     ///
@@ -183,7 +192,8 @@ impl SciNum {
         let (significand, exponent) = {
             if fraction != 0 {
                 let decimal_places = fraction.ilog10() + 1;
-                let significand = (unsigned_integer * 10_u64.pow(decimal_places + zeros as u32)) + fraction;
+                let significand =
+                    (unsigned_integer * 10_u64.pow(decimal_places + zeros as u32)) + fraction;
                 let exponent = exponent - (decimal_places as i16);
                 (significand, exponent)
             } else {
@@ -208,11 +218,15 @@ impl SciNum {
     /// in the fractional part.
     pub fn scientific_parts(&self) -> (i8, u8, u64, u32, i16) {
         if self.is_zero() {
-            return (0, 0, 0, 0, 0)
+            return (0, 0, 0, 0, 0);
         };
         let figs = self.sigfigs() as u32;
         let int_unsigned = self.significand / 10_u64.pow(figs - 1); // First digit
-        let int = if self.negative {-(int_unsigned as i8)} else { int_unsigned as i8 };
+        let int = if self.negative {
+            -(int_unsigned as i8)
+        } else {
+            int_unsigned as i8
+        };
         let frac = self.significand % 10_u64.pow(figs - 1);
         // Work out how many zeros have been dropped, if any
         let figs_in_frac = frac.checked_ilog10().map_or(0, |x| x + 1);
@@ -486,17 +500,19 @@ impl SciNum {
 impl SciNum {
     /// Removes significant figures from the significand until the desired number
     /// is reached.
-    /// 
+    ///
     /// Equivalent to rounding towards zero.
-    /// 
+    ///
     /// The uncertainty of the `SciNum` is left unchanged.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// This function panics if the `SciNum` already has fewer significant figures
     /// than the requested number.
     pub fn truncate_sf(mut self, sf: u8) -> Self {
-        if self.sigfigs() < sf { panic!() };
+        if self.sigfigs() < sf {
+            panic!()
+        };
         while self.sigfigs() > sf {
             self.significand /= 10;
             // Exponent is now too small
@@ -505,7 +521,7 @@ impl SciNum {
             if !self.is_exact() {
                 self.uncertainty_scale += 1;
             };
-        };
+        }
         self
     }
 }
@@ -580,7 +596,7 @@ impl SciNum {
     //    todo!()
     //}
 
-    fn abs(self) -> Self {
+    pub fn abs(self) -> Self {
         Self {
             negative: false,
             ..self
@@ -616,8 +632,10 @@ impl SciNum {
     //    todo!()
     //}
 
-    fn sqrt(self) -> Self {
-        if self.is_sign_negative() { panic!() };
+    pub fn sqrt(self) -> Self {
+        if self.is_sign_negative() {
+            panic!()
+        };
         self.powi(-2)
     }
 
@@ -640,7 +658,9 @@ impl SciNum {
         if self.is_exact() {
             Self::from(number)
         } else {
-            let uncertainty = Decimal::try_from(self.relative_uncertainty()).unwrap().abs();
+            let uncertainty = Decimal::try_from(self.relative_uncertainty())
+                .unwrap()
+                .abs();
             Self::from(number).with_uncertainty(uncertainty.into())
         }
     }
@@ -760,7 +780,7 @@ impl SciNum {
 
 impl From<Decimal> for SciNum {
     /// Converts a `rust_decimal::Decimal` to a `SciNum`.
-    /// 
+    ///
     /// A silent loss of precision will occur if the `Decimal` has a significand
     /// wider than 64 bits.
     /// If this is the case, `n` is first rounded to 16 significant figures using
@@ -782,7 +802,7 @@ impl TryFrom<SciNum> for Decimal {
     type Error = rust_decimal::Error;
 
     /// Attempts to convert a `SciNum` into a `rust_decimal::Decimal`.
-    /// 
+    ///
     /// Fails if `n` has a positive exponent or an exponent lower than −28.
     fn try_from(n: SciNum) -> Result<Decimal, rust_decimal::Error> {
         if n.exponent > UEXPONENT_BIAS {
@@ -855,7 +875,9 @@ impl PartialOrd for SciNum {
 
 impl Ord for SciNum {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        Decimal::try_from(*self).unwrap().cmp(&Decimal::try_from(*other).unwrap())
+        Decimal::try_from(*self)
+            .unwrap()
+            .cmp(&Decimal::try_from(*other).unwrap())
     }
 }
 
@@ -863,14 +885,15 @@ impl Add for SciNum {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
-        let number = Decimal::try_from(self.number()).unwrap() + Decimal::try_from(rhs.number()).unwrap();
+        let number =
+            Decimal::try_from(self.number()).unwrap() + Decimal::try_from(rhs.number()).unwrap();
         if self.is_exact() && rhs.is_exact() {
             Self::from(number)
         } else {
             let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
                 + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2)))
-                .sqrt()
-                .unwrap();
+            .sqrt()
+            .unwrap();
             Self::from(number).with_uncertainty(uncertainty.into())
         }
     }
@@ -888,14 +911,15 @@ impl Sub for SciNum {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
-        let number = Decimal::try_from(self.number()).unwrap() - Decimal::try_from(rhs.number()).unwrap();
+        let number =
+            Decimal::try_from(self.number()).unwrap() - Decimal::try_from(rhs.number()).unwrap();
         if self.is_exact() && rhs.is_exact() {
             Self::from(number)
         } else {
             let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
                 + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2)))
-                .sqrt()
-                .unwrap();
+            .sqrt()
+            .unwrap();
             Self::from(number).with_uncertainty(uncertainty.into())
         }
     }
@@ -936,15 +960,21 @@ impl Mul for SciNum {
                     }
                 };
                 (s, e)
-            },
+            }
         };
-        let number = Self { negative, exponent, uncertainty_scale: 0, uncertainty: 0, significand };
+        let number = Self {
+            negative,
+            exponent,
+            uncertainty_scale: 0,
+            uncertainty: 0,
+            significand,
+        };
         if self.is_exact() && rhs.is_exact() {
             number
         } else {
             let uncertainty = (self.relative_uncertainty().pow(2.into())
                 + rhs.relative_uncertainty().pow(2.into()))
-                .sqrt()
+            .sqrt()
                 * number.abs();
             number.with_uncertainty(uncertainty)
         }
@@ -963,14 +993,19 @@ impl Div for SciNum {
     type Output = Self;
 
     fn div(self, rhs: Self) -> Self {
-        let number = Decimal::try_from(self.number()).unwrap() / Decimal::try_from(rhs.number()).unwrap();
+        let number =
+            Decimal::try_from(self.number()).unwrap() / Decimal::try_from(rhs.number()).unwrap();
         if self.is_exact() && rhs.is_exact() {
-           Self::from(number)
+            Self::from(number)
         } else {
-            let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap().powu(2))
-                + (Decimal::try_from(rhs.relative_uncertainty()).unwrap().powu(2)))
-                .sqrt()
+            let uncertainty = ((Decimal::try_from(self.relative_uncertainty())
                 .unwrap()
+                .powu(2))
+                + (Decimal::try_from(rhs.relative_uncertainty())
+                    .unwrap()
+                    .powu(2)))
+            .sqrt()
+            .unwrap()
                 * number.abs();
             Self::from(number).with_uncertainty(uncertainty.into())
         }
@@ -993,7 +1028,8 @@ impl Rem for SciNum {
     /// WARNING: Uncertainty propagation is not yet implemented for this method,
     /// and the returned result will be exact.
     fn rem(self, rhs: Self) -> Self {
-        let number = Decimal::try_from(self.number()).unwrap() % Decimal::try_from(rhs.number()).unwrap();
+        let number =
+            Decimal::try_from(self.number()).unwrap() % Decimal::try_from(rhs.number()).unwrap();
         number.into()
     }
 }
@@ -1006,7 +1042,8 @@ impl Rem for &SciNum {
     /// WARNING: Uncertainty propagation is not yet implemented for this method,
     /// and the returned result will be exact.
     fn rem(self, rhs: Self) -> SciNum {
-        let number = Decimal::try_from(self.number()).unwrap() % Decimal::try_from(rhs.number()).unwrap();
+        let number =
+            Decimal::try_from(self.number()).unwrap() % Decimal::try_from(rhs.number()).unwrap();
         number.into()
     }
 }
@@ -1148,7 +1185,8 @@ impl fmt::Display for SciNum {
                 write!(f, "{significand}{uncertainty}")
             } else {
                 // 3.25e-2 is (325, -4), should be formatted as 0.0325
-                let zeros = "0".repeat((self.precision().unsigned_abs() - self.sigfigs() as u16).into());
+                let zeros =
+                    "0".repeat((self.precision().unsigned_abs() - self.sigfigs() as u16).into());
                 write!(f, "0.{zeros}{significand}{uncertainty}")
             }
         // Otherwise, use scientific notation
@@ -1182,10 +1220,17 @@ impl FromStr for SciNum {
         significand_str.push_str(int);
         let frac = caps.get(3).map_or("", |m| m.as_str()); // "971"
         significand_str.push_str(frac);
-        let significand = u64::from_str(&significand_str).map_err(|_e| SciNumError::Parse(s.into()))?; // "6971"
+        let significand =
+            u64::from_str(&significand_str).map_err(|_e| SciNumError::Parse(s.into()))?; // "6971"
         let frac_places = frac.len(); // 3
-        let uncertainty = caps.get(4).map_or(Ok(0), |m| u32::from_str(m.as_str())).map_err(|_e| SciNumError::Parse(s.into()))?; // 0
-        let exponent = caps.get(5).map_or(Ok(0), |m| i16::from_str(m.as_str())).map_err(|_e| SciNumError::Parse(s.into()))?; // -7
+        let uncertainty = caps
+            .get(4)
+            .map_or(Ok(0), |m| u32::from_str(m.as_str()))
+            .map_err(|_e| SciNumError::Parse(s.into()))?; // 0
+        let exponent = caps
+            .get(5)
+            .map_or(Ok(0), |m| i16::from_str(m.as_str()))
+            .map_err(|_e| SciNumError::Parse(s.into()))?; // -7
         // "6.971e-7" should be represented as (6971, -10)
         Ok(Self {
             uncertainty,
@@ -1246,7 +1291,7 @@ impl SciNum {
 mod tests {
     use super::*;
     use rust_decimal_macros::dec;
-    
+
     #[test]
     fn new_from_int() {
         // Using new
@@ -1492,7 +1537,9 @@ mod tests {
         let n2 = SciNum::new_with_uncertainty(30, 5, 0);
         let result = n1 / n2;
         assert_eq!(
-            Decimal::try_from(result.uncertainty()).unwrap().round_dp(10),
+            Decimal::try_from(result.uncertainty())
+                .unwrap()
+                .round_dp(10),
             dec!(0.6666666667).round_dp(10)
         );
         assert_eq!(
@@ -1600,40 +1647,22 @@ mod tests {
         // Integer
         assert_eq!(SciNum::from_str("42").unwrap(), SciNum::new(42, 0));
         // Negative float
-        assert_eq!(
-            SciNum::from_str("-3.14").unwrap(),
-            SciNum::new(-314, -2)
-        );
+        assert_eq!(SciNum::from_str("-3.14").unwrap(), SciNum::new(-314, -2));
         // Scientific notation
-        assert_eq!(
-            SciNum::from_str("1.5e8").unwrap(),
-            SciNum::new(15, 7)
-        );
+        assert_eq!(SciNum::from_str("1.5e8").unwrap(), SciNum::new(15, 7));
         // TODO large exponent fails with overflow error
-        assert_eq!(
-            SciNum::from_str("1.5e10").unwrap(),
-            SciNum::new(15, 9)
-        );
+        assert_eq!(SciNum::from_str("1.5e10").unwrap(), SciNum::new(15, 9));
         // Scientific notation with negative exponent
-        assert_eq!(
-            SciNum::from_str("2e-5").unwrap(),
-            SciNum::new(2, -5)
-        );
+        assert_eq!(SciNum::from_str("2e-5").unwrap(), SciNum::new(2, -5));
         // Negative number with positive exponent
-        assert_eq!(
-            SciNum::from_str("-6.022e6").unwrap(),
-            SciNum::new(-6022, 3)
-        );
+        assert_eq!(SciNum::from_str("-6.022e6").unwrap(), SciNum::new(-6022, 3));
         // Large exponent
         assert_eq!(
             SciNum::from_str("-6.022e23").unwrap(),
             SciNum::new(-6022, 20)
         );
         // Capital E for exponent
-        assert_eq!(
-            SciNum::from_str("1.5E8").unwrap(),
-            SciNum::new(15, 7)
-        );
+        assert_eq!(SciNum::from_str("1.5E8").unwrap(), SciNum::new(15, 7));
         // Make sure incorrectly formatted string fails
         assert!(SciNum::from_str("not a number").is_err());
     }
