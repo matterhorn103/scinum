@@ -221,7 +221,13 @@ impl SciNum {
         let figs_in_frac = frac.checked_ilog10().map_or(0, |x| x + 1);
         let zeros = (figs - 1 - figs_in_frac) as u8; // 1 is for integer digit
         let uncert = self.uncertainty;
-        let exp = self.exponent() - (figs as i16 - 1);
+        let exp = self.exponent() + (figs as i16 - 1);
+        // For example:
+        // 1.23e2 = 123 is stored as (123, 0)       =>  2 =  0 + (3 - 1)
+        // 4.5e6 = 4_500_000 is stored as (45, 5)   =>  6 =  5 + (2 - 1)
+        // 4.5e-3 = 0.0045 is stored as (45, -4)    => -3 = -4 + (2 - 1)
+        // 4.51e-3 = 0.00451 is stored as (451, -5) => -3 = -5 + (3 - 1)
+        // 4.50e-3 = 0.00450 is stored as (450, -5) => -3 = -5 + (3 - 1)
         (int, zeros, frac, uncert, exp)
     }
 
@@ -1123,7 +1129,9 @@ impl fmt::Display for SciNum {
             }
         // Otherwise, use scientific notation
         } else {
+            dbg!(&self);
             let (int, zeros, frac, _, exp) = self.scientific_parts();
+            dbg!(exp);
             let zeros = "0".repeat(zeros.into());
             // Fractional part might not have any places at all (e.g. 2e6)
             if frac == 0 {
