@@ -787,7 +787,31 @@ impl_from_int!(u64);
 
 impl PartialEq for SciNum {
     fn eq(&self, other: &Self) -> bool {
-        Decimal::try_from(*self).unwrap() == Decimal::try_from(*other).unwrap()
+        if self.is_zero() {
+            other.is_zero()
+        } else if self.is_sign_negative() != other.is_sign_negative() {
+            false
+        } else if self.exponent == other.exponent {
+            self.significand == other.significand
+        } else if self.significand.is_multiple_of(other.significand) {
+            let factor = self.significand / other.significand;
+            if factor.is_multiple_of(10) {
+                let order_diff = factor.ilog10();
+                self.exponent + order_diff as u16 == other.exponent
+            } else {
+                false
+            }
+        } else if other.significand.is_multiple_of(self.significand) {
+            let factor = other.significand / self.significand;
+            if factor.is_multiple_of(10) {
+                let order_diff = factor.ilog10();
+                other.exponent + order_diff as u16 == self.exponent
+            } else {
+                false
+            }
+        } else {
+            false
+        }
     }
 }
 
@@ -1179,10 +1203,10 @@ impl SciNum {
     /// The lowest supported number.
     pub const MIN: SciNum = SciNum {
         negative: true,
-        exponent: UMIN_EXPONENT,
+        exponent: UMAX_EXPONENT,
         uncertainty_scale: 0,
         uncertainty: 0,
-        significand: 1,
+        significand: u64::MAX,
     };
 }
 
@@ -1321,6 +1345,24 @@ mod tests {
         let n2 = SciNum::new_with_uncertainty(500, 5, 0);
         assert!(n1.is_exact());
         assert!(!n2.is_exact());
+    }
+
+    #[test]
+    fn eq() {
+        // Basic case
+        assert_eq!(SciNum::new(3, 0), SciNum::new(3, 0));
+        // Not equal, basic case
+        assert_ne!(SciNum::new(3, 0), SciNum::new(4, 0));
+        // Both zero
+        assert_eq!(SciNum::new(0, 0), SciNum::new(0, 0));
+        // Both zero, one is negative zero
+        assert_eq!(SciNum::new(0, 0), SciNum::new(-0, 0));
+        // Opposite sign but same significand
+        assert_ne!(SciNum::new(3, 0), SciNum::new(-3, 0));
+        // Same value but different precision
+        assert_eq!(SciNum::new(200, 3), SciNum::new(2, 5));
+        // Same value but different precision, small numbers
+        assert_eq!(SciNum::new(200, 3), SciNum::new(2, 5));
     }
 
     #[test]
