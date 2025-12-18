@@ -33,20 +33,25 @@ pub struct SciNum {
     uncertainty: u32,
     uncertainty_scale: u8, // This allows the uncertainty to have a different precision
     // Have the uncertainty come first so that the bits used for comparisons are
-    // the 80/81 least significant bits, just like in IEEE floating point formats
+    // the 81 least significant bits, just like in IEEE floating point formats
     negative: bool,
-    exponent: u16, // Biased 15-bit exponent with bias b = 2^14 - 1 = 16383
+    exponent: u16, // Biased 16-bit exponent with bias b = 2^15 - 1 = 32767
     significand: u64,
 }
 
 // Only use 15 of the 16 bits so that we can fit the sign and exponent into 16
 // bits later if so desired
-const UEXPONENT_BIAS: u16 = 16383;
+const UEXPONENT_BIAS: u16 = 32767;
 const UMIN_EXPONENT: u16 = 0;
-const UMAX_EXPONENT: u16 = 32767;
-const EXPONENT_BIAS: i16 = 16383;
-const MIN_EXPONENT: i16 = -16383;
-const MAX_EXPONENT: i16 = 16384;
+const UMAX_EXPONENT: u16 = u16::MAX;
+const EXPONENT_BIAS: i16 = 32767;
+const MIN_EXPONENT: i16 = -32767;
+const MAX_EXPONENT: i16 = 32767;
+
+const MIN_SIGNIFICAND: u64 = 0;
+const MAX_SIGNIFICAND: u64 = u64::MAX;
+const MIN_NUMBER: i128 = -0xFFFFFFFFFFFFFFFF;
+const MAX_NUMBER: i128 = 0xFFFFFFFFFFFFFFFF;
 
 impl SciNum {
     /// Creates an exact `SciNum` from parts corresponding to _m_ ×
@@ -54,7 +59,8 @@ impl SciNum {
     ///
     /// # Panics
     ///
-    /// This function panics if `exponent` is outside of the range −16383 to 16384.
+    /// This function panics if the unsigned value of the number is larger than
+    /// `u64::MAX` i.e. outside of the range −(2<sup>64</sup>) to 2<sup>64</sup>.
     ///
     /// # Example
     ///
@@ -65,7 +71,7 @@ impl SciNum {
     /// assert_eq!(n.to_string(), "0.251");
     /// ```
     pub fn new(number: i128, exponent: i16) -> Self {
-        if !(MIN_EXPONENT..=MAX_EXPONENT).contains(&exponent) {
+        if !(MIN_EXPONENT..=MAX_EXPONENT).contains(&exponent) || !(MIN_NUMBER..=MAX_NUMBER).contains(&number) {
             panic!()
         }
         Self {
@@ -85,7 +91,8 @@ impl SciNum {
     ///
     /// # Panics
     ///
-    /// This function panics if `exponent` is outside of the range −16383 to 16384.
+    /// This function panics if the unsigned value of the number is larger than
+    /// `u64::MAX` i.e. outside of the range −(2<sup>64</sup>) to 2<sup>64</sup>.
     ///
     /// # Example
     ///
@@ -96,7 +103,7 @@ impl SciNum {
     /// assert_eq!(n.to_string(), "0.251(3)");
     /// ```
     pub fn new_with_uncertainty(number: i128, uncertainty: u32, exponent: i16) -> Self {
-        if !(MIN_EXPONENT..=MAX_EXPONENT).contains(&exponent) {
+        if !(MIN_EXPONENT..=MAX_EXPONENT).contains(&exponent) || !(MIN_NUMBER..=MAX_NUMBER).contains(&number) {
             panic!()
         }
         Self {
@@ -129,6 +136,8 @@ impl SciNum {
         } else {
             uncertainty
         };
+        dbg!(self.exponent());
+        dbg!(narrowed_uncertainty.exponent());
         self.uncertainty_scale = (self.exponent - narrowed_uncertainty.exponent)
             .try_into()
             .expect(
@@ -293,6 +302,7 @@ impl SciNum {
     /// Corresponds to representation of the number as `mmmmm × 10^nn`.
     #[inline]
     pub fn exponent(&self) -> i16 {
+        dbg!(self.exponent);
         self.exponent as i16 - EXPONENT_BIAS
     }
 
@@ -654,9 +664,22 @@ impl SciNum {
     //    todo!()
     //}
 
+    /// Raise the `SciNum` to an integer power.
     #[inline]
-    pub fn powi(self, rhs: i32) -> Self {
-        todo!()
+    pub fn powi(self, n: i32) -> Self {
+        let exact = if n.is_negative() {
+            self.powi(n.abs()).inv()
+        } else {
+            let number = self.significand_signed().pow(n.try_into().unwrap());
+            let exponent = self.exponent() * i16::try_from(n).unwrap();
+            Self::new(number, exponent)
+        };
+        if self.is_exact() {
+            exact
+        } else {
+            let uncertainty = (self.relative_uncertainty() * n) * exact.abs();
+            exact.with_uncertainty(uncertainty)
+        }
     }
 
     //fn powf(self, n: Self) -> Self {
@@ -664,10 +687,7 @@ impl SciNum {
     //}
 
     pub fn sqrt(self) -> Self {
-        if self.is_sign_negative() {
-            panic!()
-        };
-        self.powi(-2)
+        todo!()
     }
 
     pub fn exp(self) -> Self {
@@ -916,8 +936,11 @@ impl Add for SciNum {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
+        // TODO If significand would be too large for u64, just round it and
+        // increase the exponent instead of panicking
+
         // In the simplest case, the exponents are the same
-        let number = if self.exponent == rhs.exponent {
+        let exact = if self.exponent == rhs.exponent {
             let number = self.significand_signed() + rhs.significand_signed();
             Self::new(number, self.exponent())
         // Otherwise have to try and set the exponent to the same for both terms
@@ -934,11 +957,11 @@ impl Add for SciNum {
             Self::new(number, scaled.exponent())
         };
         if self.is_exact() && rhs.is_exact() {
-            number
+            exact
         } else {
             let uncertainty =
                 ((self.uncertainty().pow(2.into())) + rhs.uncertainty().pow(2.into())).sqrt();
-            number.with_uncertainty(uncertainty)
+            exact.with_uncertainty(uncertainty)
         }
     }
 }
@@ -1006,7 +1029,7 @@ impl Mul for SciNum {
                 (s, e)
             }
         };
-        let number = Self {
+        let exact = Self {
             uncertainty: 0,
             uncertainty_scale: 0,
             negative,
@@ -1014,13 +1037,13 @@ impl Mul for SciNum {
             significand,
         };
         if self.is_exact() && rhs.is_exact() {
-            number
+            exact
         } else {
             let uncertainty = (self.relative_uncertainty().pow(2.into())
                 + rhs.relative_uncertainty().pow(2.into()))
             .sqrt()
-                * number.abs();
-            number.with_uncertainty(uncertainty)
+                * exact.abs();
+            exact.with_uncertainty(uncertainty)
         }
     }
 }
@@ -1635,14 +1658,15 @@ mod tests {
     }
 
     #[test]
-    fn exponentiation() {
-        let n1 = SciNum::new_with_uncertainty(20, 2, 0);
-
-        //let result = n1.powd(Decimal::TWO);
-        //assert_eq!(result.number(), sci!(400));
-        //assert_eq!(result.uncertainty(), sci!(80));
-
-        let result = n1.powi(2);
+    fn pow() {
+        let n1 = SciNum::new(4, 0);
+        assert_eq!(n1.powi(2), sci!(16));
+        assert_eq!(n1.powi(3), sci!(64));
+        assert_eq!(n1.powi(-1), sci!(0.25));
+        assert_eq!(n1.powi(-2), sci!(0.0625));
+        
+        let n2 = SciNum::new_with_uncertainty(20, 2, 0);
+        let result = n2.powi(2);
         assert_eq!(result.number(), sci!(400));
         assert_eq!(result.uncertainty(), sci!(80));
     }
