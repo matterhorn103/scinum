@@ -759,22 +759,22 @@ impl SciNum {
 }
 
 impl From<Decimal> for SciNum {
-    #[inline]
     /// Converts a `rust_decimal::Decimal` to a `SciNum`.
     /// 
-    /// A silent loss of precision will occur if the `Decimal` has more than 18
-    /// significant figures.
-    /// If this is the case, `n` is first rounded to 18 decimal places using
-    /// `Decimal.rescale()`; the rounding thus follows the
-    /// `rust_decimal::RoundingStrategy::MidpointAwayFromZero` strategy.
-    fn from(mut n: Decimal) -> Self {
-        if n.scale() > 18 {
-            n.rescale(18);
-        }
+    /// A silent loss of precision will occur if the `Decimal` has a significand
+    /// wider than 64 bits.
+    /// If this is the case, `n` is first rounded to 16 significant figures using
+    /// `Decimal.round_sf()`; the rounding thus follows the
+    /// `rust_decimal::RoundingStrategy::MidpointNearestEven` strategy.
+    fn from(n: Decimal) -> Self {
+        let n = if n.unpack().hi == 0 {
+            n
+        } else {
+            n.round_sf(16).unwrap()
+        };
         // `n.hi` should now always be 0 and the significand should fit into a `u64`
-        let mantissa = n.mantissa();
         // `n.scale()` is max 28 anyway, should be max 18 at this point
-        Self::new(mantissa, -(n.scale() as i16))
+        Self::new(n.mantissa(), -(n.scale() as i16))
     }
 }
 
