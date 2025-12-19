@@ -82,8 +82,6 @@ fn unbias_exponent(exponent: u16) -> i16 {
     }
 }
 
-const MIN_SIGNIFICAND: u64 = 0;
-const MAX_SIGNIFICAND: u64 = u64::MAX;
 const MIN_NUMBER: i128 = -0xFFFFFFFFFFFFFFFF;
 const MAX_NUMBER: i128 = 0xFFFFFFFFFFFFFFFF;
 
@@ -695,8 +693,15 @@ impl SciNum {
     //}
 
     /// Raise the `SciNum` to an integer power.
+    /// 
+    /// # Panics
+    /// 
+    /// This function panics if `n` is not within the range `-127 <= n <= 127`.
     #[inline]
     pub fn powi(self, n: i32) -> Self {
+        if !(-127..128).contains(&n) {
+            panic!()
+        }
         let exact = if n.is_negative() {
             self.powi(n.abs()).inv()
         } else {
@@ -1036,12 +1041,12 @@ impl Mul for SciNum {
     fn mul(self, rhs: Self) -> Self {
         let negative = self.negative ^ rhs.negative;
         let (significand, exponent) = match self.significand.checked_mul(rhs.significand) {
-            Some(s) => (s, self.exponent + rhs.exponent),
+            Some(s) => (s, self.exponent() + rhs.exponent()),
             None => {
                 // Significand multiplication results in overflow, so convert to u128,
                 // do mul (which won't ever overflow), then round
                 let mut too_wide = (self.significand as u128) * (rhs.significand as u128);
-                let mut e = self.exponent + rhs.exponent;
+                let mut e = self.exponent() + rhs.exponent();
                 let s: u64 = loop {
                     match u64::try_from(too_wide) {
                         Err(_) => {
@@ -1063,7 +1068,7 @@ impl Mul for SciNum {
             uncertainty: 0,
             uncertainty_scale: 0,
             negative,
-            exponent,
+            exponent: bias_exponent(exponent),
             significand,
         };
         if self.is_exact() && rhs.is_exact() {
@@ -1148,8 +1153,21 @@ impl Rem for &SciNum {
 impl Pow<Self> for SciNum {
     type Output = Self;
 
+    /// Raise the `SciNum` to a `SciNum` power.
+    /// 
+    /// # Panics
+    /// 
+    /// This function panics if `rhs` is not within the range `-127 <= n <= 127`.
     fn pow(self, rhs: Self) -> Self {
-        todo!()
+        if rhs > SciNum::from(127) || rhs < SciNum::from(-127) {
+            panic!()
+        }
+        if rhs.is_exact() && rhs.exponent == EXPONENT_BIAS { // i.e. is 0
+            let n = rhs.significand_signed();
+            self.powi(n.try_into().expect("n has already been checked and should fit into even an i8"))
+        } else {
+            todo!()
+        }
     }
 }
 
@@ -1157,7 +1175,7 @@ impl Pow<Self> for &SciNum {
     type Output = SciNum;
 
     fn pow(self, rhs: Self) -> SciNum {
-        todo!()
+        (*self).pow(*rhs)
     }
 }
 
@@ -1724,6 +1742,7 @@ mod tests {
         let n2 = SciNum::new_with_uncertainty(20, 2, 0);
         let result = n2.powi(2);
         assert_eq!(result.number(), sci!(400));
+        // Currently fails, calculates an uncertainty of 8000
         assert_eq!(result.uncertainty(), sci!(80));
     }
 
