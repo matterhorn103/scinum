@@ -1626,13 +1626,15 @@ mod tests {
     }
 
     #[test]
-    fn addition() {
-        // Exact
+    fn add_exact() {
         let n1 = SciNum::new(40, 0);
         let n2 = sci!(5.1);
         let result = n1 + n2;
         assert_eq!(result, sci!(45.1));
-        // With uncertainties
+    }
+
+    #[test]
+    fn add_with_uncertainty() {
         let n1 = SciNum::new_with_uncertainty(20, 2, 0);
         let n2 = SciNum::new_with_uncertainty(30, 5, 0);
         let result = n1 + n2;
@@ -1644,7 +1646,7 @@ mod tests {
     }
 
     #[test]
-    fn addition_with_int() {
+    fn add_with_int() {
         let n1 = SciNum::new(20, 0);
         let n2 = 30;
         let result: SciNum = n1 + n2;
@@ -1652,7 +1654,14 @@ mod tests {
     }
 
     #[test]
-    fn subtraction() {
+    fn sub_exact() {
+        let n1 = SciNum::new(20, 0);
+        let n2 = SciNum::new(30, 0);
+        assert_eq!(n1 - n2, sci!(-10));
+    }
+
+    #[test]
+    fn sub_with_uncertainty() {
         let n1 = SciNum::new_with_uncertainty(20, 2, 0);
         let n2 = SciNum::new_with_uncertainty(30, 5, 0);
         let result = n1 - n2;
@@ -1664,7 +1673,7 @@ mod tests {
     }
 
     #[test]
-    fn subtraction_with_int() {
+    fn sub_with_int() {
         let n1 = SciNum::new(20, 0);
         let n2 = 30;
         let result: SciNum = n1 - n2;
@@ -1672,11 +1681,18 @@ mod tests {
     }
 
     #[test]
-    fn multiplication() {
+    fn mul_exact() {
+        let n1 = SciNum::new(20, 0);
+        let n2 = SciNum::new(30, 0);
+        assert_eq!(n1 * n2, sci!(600));
+    }
+
+    #[test]
+    fn mul_with_uncertainty() {    
         let n1 = SciNum::new_with_uncertainty(20, 2, 0);
         let n2 = SciNum::new_with_uncertainty(30, 5, 0);
         let result = n1 * n2;
-        assert_eq!(result, sci!(600));
+        assert_eq!(result.number(), sci!(600));
         assert_eq!(
             Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
             dec!(116.619037896906).round_dp(5)
@@ -1687,7 +1703,7 @@ mod tests {
     }
 
     #[test]
-    fn multiplication_with_int() {
+    fn mul_with_int() {
         let n1 = SciNum::new(20, 0);
         let n2 = 30;
         let result: SciNum = n1 * n2;
@@ -1695,7 +1711,7 @@ mod tests {
     }
 
     #[test]
-    fn division() {
+    fn div_with_uncertainty() {
         let n1 = SciNum::new_with_uncertainty(20, 2, 0);
         let n2 = SciNum::new_with_uncertainty(30, 5, 0);
         let result = n1 / n2;
@@ -1712,7 +1728,7 @@ mod tests {
     }
 
     #[test]
-    fn division_with_int() {
+    fn div_with_int() {
         let n1 = SciNum::new(60, 0);
         let n2 = 30;
         let result: SciNum = n1 / n2;
@@ -1720,7 +1736,7 @@ mod tests {
     }
 
     #[test]
-    fn division_reversed() {
+    fn div_with_uncertainty_reversed() {
         let n1 = SciNum::new_with_uncertainty(20, 2, 0);
         let n2 = SciNum::new_with_uncertainty(30, 5, 0);
         let result = n2 / n1;
@@ -1732,15 +1748,18 @@ mod tests {
     }
 
     #[test]
-    fn pow() {
-        let n1 = SciNum::new(4, 0);
-        assert_eq!(n1.powi(2), sci!(16));
-        assert_eq!(n1.powi(3), sci!(64));
-        assert_eq!(n1.powi(-1), sci!(0.25));
-        assert_eq!(n1.powi(-2), sci!(0.0625));
+    fn powi_exact() {
+        let n = SciNum::new(4, 0);
+        assert_eq!(n.powi(2), sci!(16));
+        assert_eq!(n.powi(3), sci!(64));
+        assert_eq!(n.powi(-1), sci!(0.25));
+        assert_eq!(n.powi(-2), sci!(0.0625));
+    }
 
-        let n2 = SciNum::new_with_uncertainty(20, 2, 0);
-        let result = n2.powi(2);
+    #[test]
+    fn powi_with_uncertainty() {
+        let n = SciNum::new_with_uncertainty(20, 2, 0);
+        let result = n.powi(2);
         assert_eq!(result.number(), sci!(400));
         // Currently fails, calculates an uncertainty of 8000
         assert_eq!(result.uncertainty(), sci!(80));
