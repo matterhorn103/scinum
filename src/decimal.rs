@@ -88,7 +88,7 @@ const MAX_NUMBER: i128 = 0xFFFFFFFFFFFFFFFF;
 impl SciNumeric for SciDecimal {
     type Numeric = SciDecimal;
 
-        /// Returns the number as an exact `SciDecimal` without its uncertainty.
+    /// Returns the number as an exact `SciDecimal` without its uncertainty.
     #[inline]
     fn number(&self) -> Self {
         Self {
@@ -1472,6 +1472,32 @@ mod tests {
     }
 
     #[test]
+    fn new_largest_exponent() {
+        let _n = SciDecimal::new(1, i16::MAX);
+    }
+
+    #[test]
+    fn new_smallest_exponent() {
+        let _n = SciDecimal::new(1, i16::MIN);
+    }
+
+    #[test]
+    fn new_largest_significand() {
+        let _n = SciDecimal::new(u64::MAX.into(), 0);
+    }
+
+    #[test]
+    fn new_largest_negative_significand() {
+        let _n = SciDecimal::new(-i128::from(u64::MAX), 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn new_invalid_significand() {
+        let _n = SciDecimal::new(i128::from(u64::MAX) + 1, 0);
+    }
+
+    #[test]
     fn into_decimal() {
         let n = SciDecimal::new_with_uncertainty(20, 2, 0);
         assert_eq!(Decimal::try_from(n).unwrap(), dec!(20));
@@ -1712,6 +1738,30 @@ mod tests {
         let n2 = 30;
         let result: SciDecimal = n1 * n2;
         assert_eq!(result, sci!(600));
+    }
+
+    #[test]
+    fn div_exact() {
+        // Non-recurring result with same exponent
+        assert_eq!(
+            SciDecimal::new(60, 0) / SciDecimal::new(30, 0),
+            SciDecimal::new(2, 0),
+        );
+        // Non-recurring result with different exponent
+        assert_eq!(
+            SciDecimal::new(30, 0) / SciDecimal::new(60, 0),
+            SciDecimal::new(5, -1),
+        );
+        // Identical recurring results with different pairs of starting numbers
+        assert_eq!(
+            SciDecimal::new(30, 0) / SciDecimal::new(60, 0),
+            SciDecimal::new(3, 6) / SciDecimal::new(6, 6),
+        );
+        // Recurring result
+        assert_eq!(
+            (SciDecimal::new(1, 0) / SciDecimal::new(3, 0)),
+            SciDecimal::new(3333333333333333333, -19),
+        );
     }
 
     #[test]
