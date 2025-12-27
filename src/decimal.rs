@@ -109,7 +109,7 @@ impl Sub<u8> for BiasedExponent {
     type Output = BiasedExponent;
 
     fn sub(self, rhs: u8) -> BiasedExponent {
-        BiasedExponent(self.0 - u16::from(rhs))
+        BiasedExponent::from(i16::from(self) - i16::from(rhs))
     }
 }
 
