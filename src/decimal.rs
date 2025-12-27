@@ -105,6 +105,15 @@ impl From<BiasedExponent> for i16 {
     }
 }
 
+impl Sub<u8> for BiasedExponent {
+    type Output = BiasedExponent;
+
+    fn sub(self, rhs: u8) -> BiasedExponent {
+        BiasedExponent(self.0 - u16::from(rhs))
+    }
+}
+
+
 /// A decimal floating point number with an associated uncertainty.
 ///
 /// Represents a number of the form (_m_ ± _u_) × 10<sup><i>n</i></sup>.
@@ -156,7 +165,7 @@ impl SciNumeric for SciDecimal {
             uncertainty: 0,
             uncertainty_scale: 0,
             negative: false,
-            exponent: self.exponent,
+            exponent: self.exponent - self.uncertainty_scale,
             significand: self.uncertainty.into(),
         }
     }
