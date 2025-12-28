@@ -3,7 +3,7 @@
 
 use std::{
     fmt::{self, Debug},
-    ops::{Add, Div, Mul, Rem, Sub},
+    ops::{Add, Div, Mul, Neg, Rem, Sub},
     str::FromStr,
 };
 
@@ -190,7 +190,7 @@ impl SciDecimal {
     /// ```
     pub fn new(number: i128, exponent: i16) -> Self {
         if !(MIN_NUMBER..=MAX_NUMBER).contains(&number) {
-            panic!()
+            panic!("{number} has too many significant figures for a significand!")
         }
         Self {
             uncertainty: 0,
@@ -251,7 +251,8 @@ impl SciDecimal {
     #[inline]
     pub fn with_uncertainty(mut self, uncertainty: Self) -> Self {
         let narrowed_uncertainty = if uncertainty.significand > u32::MAX.into() {
-            uncertainty.truncate_sf(9)
+            uncertainty.truncate(9);
+            uncertainty
         } else {
             uncertainty
         };
@@ -622,7 +623,7 @@ impl SciDecimal {
     ///
     /// This function panics if the `SciDecimal` already has fewer significant figures
     /// than the requested number.
-    pub fn truncate_sf(mut self, sf: u8) -> Self {
+    pub fn truncate(mut self, sf: u8) -> Self {
         if self.sigfigs() < sf {
             panic!()
         };
@@ -638,12 +639,18 @@ impl SciDecimal {
         self
     }
 
-    /// Adds additional significant zeros to the significand.
+    /// Increases the precision of the number by adding additional significant zeros
+    /// to the significand.
     ///
-    /// This is equivalent to decreasing the exponent by `zeros`.
+    /// This is equivalent to decreasing the exponent by `sf`.
     ///
     /// The uncertainty of the `SciDecimal` is left unchanged.
-    pub fn add_sf(mut self, sf: u8) -> Self {
+    /// 
+    /// # Panics
+    /// 
+    /// This function panics if the increase would result in `significand`,
+    /// `exponent`, or `uncertainty_scale` exceeding their maximum values.
+    pub fn increase_precision(mut self, sf: u8) -> Self {
         for _ in 0..sf {
             self.significand *= 10;
             // Exponent is now too large
@@ -654,6 +661,28 @@ impl SciDecimal {
             };
         }
         self
+    }
+
+    /// Increases the precision of the number by adding additional significant zeros
+    /// to the significand, without panicking.
+    ///
+    /// This is equivalent to decreasing the exponent by `sf`.
+    ///
+    /// The uncertainty of the `SciDecimal` is left unchanged.
+    pub fn checked_increase_precision(mut self, sf: u8) -> Option<Self> {
+        //dbg!("In method scope");
+        //dbg!(self);
+        for _ in 0..sf {
+            self.significand = self.significand.checked_mul(10)?;
+            // Exponent is now too large
+            self.exponent.0 = self.exponent.0.checked_sub(1)?;
+            // Uncertainty is now too small
+            if !self.is_exact() {
+                self.uncertainty_scale = self.uncertainty_scale.checked_sub(1)?;
+            };
+        }
+        //dbg!(self);
+        Some(self)
     }
 }
 
@@ -1037,22 +1066,19 @@ impl Add for SciDecimal {
         // increase the exponent instead of panicking
 
         // In the simplest case, the exponents are the same
-        let exact = if self.exponent == rhs.exponent {
-            let number = self.significand_signed() + rhs.significand_signed();
-            Self::new(number, self.exponent())
         // Otherwise have to try and set the exponent to the same for both terms
         // Use whichever exponent is smallest
-        } else if self.exponent < rhs.exponent {
-            let exp_diff = rhs.exponent.0 - self.exponent.0;
-            let scaled = rhs.add_sf(exp_diff.try_into().unwrap());
-            let number = self.significand_signed() + scaled.significand_signed();
-            Self::new(number, self.exponent())
-        } else {
-            let exp_diff = self.exponent.0 - rhs.exponent.0;
-            let scaled = self.add_sf(exp_diff.try_into().unwrap());
-            let number = scaled.significand_signed() + rhs.significand_signed();
-            Self::new(number, scaled.exponent())
+        if self.exponent != rhs.exponent {
+            if self.exponent < rhs.exponent {
+                let exp_diff = rhs.exponent.0 - self.exponent.0;
+                rhs.increase_precision(exp_diff.try_into().unwrap());
+            } else {
+                let exp_diff = self.exponent.0 - rhs.exponent.0;
+                self.increase_precision(exp_diff.try_into().unwrap());
+            }
         };
+        let number = self.significand_signed() + rhs.significand_signed();
+        let exact = Self::new(number, self.exponent());
         if self.is_exact() && rhs.is_exact() {
             exact
         } else {
@@ -1075,17 +1101,8 @@ impl Sub for SciDecimal {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
-        let number =
-            Decimal::try_from(self.number()).unwrap() - Decimal::try_from(rhs.number()).unwrap();
-        if self.is_exact() && rhs.is_exact() {
-            Self::from(number)
-        } else {
-            let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
-                + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2)))
-            .sqrt()
-            .unwrap();
-            Self::from(number).with_uncertainty(uncertainty.into())
-        }
+        let rhs = -rhs;
+        self + rhs
     }
 }
 
@@ -1113,7 +1130,7 @@ impl Mul for SciDecimal {
                     match u64::try_from(too_wide) {
                         Err(_) => {
                             // Still too wide so divide by 10
-                            // In future we should round; for now, just truncate
+                            // TODO In future we should round; for now, just truncate
                             too_wide /= 10;
                             e += 1;
                             continue;
@@ -1136,8 +1153,8 @@ impl Mul for SciDecimal {
         if self.is_exact() && rhs.is_exact() {
             exact
         } else {
-            let uncertainty = (self.relative_uncertainty().pow(2.into())
-                + rhs.relative_uncertainty().pow(2.into()))
+            let uncertainty = (self.relative_uncertainty().powi(2)
+                + rhs.relative_uncertainty().powi(2))
             .sqrt()
                 * exact.abs();
             exact.with_uncertainty(uncertainty)
@@ -1157,21 +1174,58 @@ impl Div for SciDecimal {
     type Output = Self;
 
     fn div(self, rhs: Self) -> Self {
-        let number =
-            Decimal::try_from(self.number()).unwrap() / Decimal::try_from(rhs.number()).unwrap();
-        if self.is_exact() && rhs.is_exact() {
-            Self::from(number)
+        let negative = self.negative ^ rhs.negative;
+        // Increase precision of the numerator until the denominator goes into
+        // it an exact number of times, or until the maximum precision is
+        // reached
+        let mut lhs = self;
+        let mut iterations: u8 = 0;
+        let mut max_precision_reached = false;
+        while !lhs.significand.is_multiple_of(rhs.significand) {
+            dbg!(lhs.significand);
+            iterations += 1;
+            if iterations > 100 {
+                panic!("{}", iterations)
+            }
+            match lhs.checked_increase_precision(1) {
+                Some(new) => lhs = new,
+                None => {
+                    max_precision_reached = true;
+                    break
+                },
+            }
+        }
+        //let mut scaled = self;
+        //if !scaled.significand.is_multiple_of(rhs.significand) {
+        //    dbg!("Before");
+        //    dbg!(scaled);
+        //    scaled = scaled.checked_increase_precision(1).unwrap();
+        //    dbg!("After");
+        //    dbg!(scaled);
+        //    panic!()
+        //}
+        let significand = if max_precision_reached {
+            // TODO Go via u128 and then round (not truncate) to precision of u64
+            lhs.significand / rhs.significand
         } else {
-            let uncertainty = ((Decimal::try_from(self.relative_uncertainty())
-                .unwrap()
-                .powu(2))
-                + (Decimal::try_from(rhs.relative_uncertainty())
-                    .unwrap()
-                    .powu(2)))
+            lhs.significand / rhs.significand
+        };
+        let exponent = lhs.exponent() - rhs.exponent();
+        let exact = Self {
+            uncertainty: 0,
+            uncertainty_scale: 0,
+            negative,
+            exponent: exponent.into(),
+            significand,
+        };
+        if self.is_exact() && rhs.is_exact() {
+            exact
+        } else {
+            let uncertainty = (lhs.relative_uncertainty().powi(2)
+                + rhs.relative_uncertainty().powi(2))
             .sqrt()
-            .unwrap()
-                * number.abs();
-            Self::from(number).with_uncertainty(uncertainty.into())
+                * exact.abs();
+            exact.with_uncertainty(uncertainty)
         }
     }
 }
@@ -1238,6 +1292,24 @@ impl Pow<Self> for &SciDecimal {
 
     fn pow(self, rhs: Self) -> SciDecimal {
         (*self).pow(*rhs)
+    }
+}
+
+impl Neg for SciDecimal {
+    type Output = Self;
+
+    #[inline]
+    fn neg(self) -> Self {
+        Self { negative: !self.negative, ..self }
+    }
+}
+
+impl Neg for &SciDecimal {
+    type Output = SciDecimal;
+
+    #[inline]
+    fn neg(self) -> SciDecimal {
+        SciDecimal { negative: !self.negative, ..*self }
     }
 }
 
@@ -1689,23 +1761,23 @@ mod tests {
     }
 
     #[test]
-    fn truncate_sf() {
+    fn truncate() {
         // Positive
         let n = sci!(25.6949);
-        assert_eq!(n.truncate_sf(2), sci!(25));
-        assert_eq!(n.truncate_sf(3), sci!(25.6));
+        assert_eq!(n.truncate(2), sci!(25));
+        assert_eq!(n.truncate(3), sci!(25.6));
         // Negative
         let n = sci!(-3.794718);
-        assert_eq!(n.truncate_sf(4), sci!(-3.794));
-        assert_eq!(n.truncate_sf(3), sci!(-3.79));
+        assert_eq!(n.truncate(4), sci!(-3.794));
+        assert_eq!(n.truncate(3), sci!(-3.79));
         // Integer
         let n = sci!(4327890);
-        assert_eq!(n.truncate_sf(4), sci!(4.327e6));
-        assert_eq!(n.truncate_sf(5), sci!(4.3278e6));
+        assert_eq!(n.truncate(4), sci!(4.327e6));
+        assert_eq!(n.truncate(5), sci!(4.3278e6));
         // Smaller than 1
         let n = sci!(0.4327890);
-        assert_eq!(n.truncate_sf(4), sci!(4.327e-1));
-        assert_eq!(n.truncate_sf(5), sci!(4.3278e-1));
+        assert_eq!(n.truncate(4), sci!(4.327e-1));
+        assert_eq!(n.truncate(5), sci!(4.3278e-1));
     }
 
     #[test]
@@ -1716,7 +1788,8 @@ mod tests {
         //assert_eq!(n.add_sf(2).to_string(), "25.6900");
         let n2 = sci!(2.69e7);
         assert_eq!(n2.to_string(), "2.69e7");
-        assert_eq!(n2.add_sf(2).to_string(), "2.6900e7");
+        n2.increase_precision(2);
+        assert_eq!(n2.to_string(), "2.6900e7");
     }
 
     #[test]
@@ -1821,11 +1894,16 @@ mod tests {
             SciDecimal::new(30, 0) / SciDecimal::new(60, 0),
             SciDecimal::new(3, 6) / SciDecimal::new(6, 6),
         );
-        // Recurring result
+        // Recurring results
         assert_eq!(
             (SciDecimal::new(1, 0) / SciDecimal::new(3, 0)),
             SciDecimal::new(3333333333333333333, -19),
         );
+        // Fails as result is currently truncated rather than rounded
+        //assert_eq!(
+        //    (SciDecimal::new(1, 0) / SciDecimal::new(9, 0)),
+        //    SciDecimal::new(1111111111111111112, -19),
+        //);
     }
 
     #[test]
@@ -1881,6 +1959,24 @@ mod tests {
         assert_eq!(result.number(), sci!(400));
         // Currently fails, calculates an uncertainty of 8000
         assert_eq!(result.uncertainty(), sci!(80));
+    }
+
+    #[test]
+    fn inv() {
+        assert_eq!(SciDecimal::new(4, 0).inv(), SciDecimal::new(25, -2));
+        assert_eq!(SciDecimal::new(5, -1).inv(), SciDecimal::new(2, 0));
+    }
+
+    #[test]
+    fn neg() {
+        let n_pos = SciDecimal::new(4, 0);
+        let n_neg = n_pos.neg();
+        assert_eq!(n_neg, SciDecimal::new(-4, 0));
+        assert!(n_neg.negative);
+        assert_eq!(n_neg.significand, 4);
+        let n_roundtrip = n_neg.neg();
+        assert!(!n_roundtrip.negative);
+        assert_eq!(n_roundtrip, n_pos);
     }
 
     #[test]
