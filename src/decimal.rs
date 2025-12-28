@@ -3,7 +3,7 @@
 
 use std::{
     fmt::{self, Debug},
-    ops::{Add, Div, Mul, Rem, Sub},
+    ops::{Add, Div, Mul, Neg, Rem, Sub},
     str::FromStr,
 };
 
@@ -1066,17 +1066,8 @@ impl Sub for SciDecimal {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
-        let number =
-            Decimal::try_from(self.number()).unwrap() - Decimal::try_from(rhs.number()).unwrap();
-        if self.is_exact() && rhs.is_exact() {
-            Self::from(number)
-        } else {
-            let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
-                + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2)))
-            .sqrt()
-            .unwrap();
-            Self::from(number).with_uncertainty(uncertainty.into())
-        }
+        let rhs = -rhs;
+        self + rhs
     }
 }
 
@@ -1229,6 +1220,24 @@ impl Pow<Self> for &SciDecimal {
 
     fn pow(self, rhs: Self) -> SciDecimal {
         (*self).pow(*rhs)
+    }
+}
+
+impl Neg for SciDecimal {
+    type Output = Self;
+
+    #[inline]
+    fn neg(self) -> Self {
+        Self { negative: !self.negative, ..self }
+    }
+}
+
+impl Neg for &SciDecimal {
+    type Output = SciDecimal;
+
+    #[inline]
+    fn neg(self) -> SciDecimal {
+        SciDecimal { negative: !self.negative, ..*self }
     }
 }
 
@@ -1872,6 +1881,24 @@ mod tests {
         assert_eq!(result.number(), sci!(400));
         // Currently fails, calculates an uncertainty of 8000
         assert_eq!(result.uncertainty(), sci!(80));
+    }
+
+    #[test]
+    fn inv() {
+        assert_eq!(SciDecimal::new(4, 0).inv(), SciDecimal::new(25, -2));
+        assert_eq!(SciDecimal::new(5, -1).inv(), SciDecimal::new(2, 0));
+    }
+
+    #[test]
+    fn neg() {
+        let n_pos = SciDecimal::new(4, 0);
+        let n_neg = n_pos.neg();
+        assert_eq!(n_neg, SciDecimal::new(-4, 0));
+        assert!(n_neg.negative);
+        assert_eq!(n_neg.significand, 4);
+        let n_roundtrip = n_neg.neg();
+        assert!(!n_roundtrip.negative);
+        assert_eq!(n_roundtrip, n_pos);
     }
 
     #[test]
