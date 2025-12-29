@@ -214,7 +214,7 @@ impl SciDecimal {
     pub fn new_with_uncertainty(number: i128, uncertainty: u32, exponent: i16) -> Self {
         if !(MIN_NUMBER..=MAX_NUMBER).contains(&number)
         {
-            panic!()
+            panic!("{number} has too many significant figures for a significand!")
         }
         Self {
             uncertainty,
