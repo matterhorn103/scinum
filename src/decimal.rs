@@ -304,11 +304,11 @@ impl SciDecimal {
     ) -> Self {
         let unsigned_integer: u64 = integer.unsigned_abs().into();
         let (significand, exponent) = {
-            if fraction != 0 {
-                let decimal_places = fraction.ilog10() + 1;
+            if fraction != 0 || zeros != 0 {
+                let decimal_places = if fraction == 0 { 0 } else { fraction.ilog10() + 1 };
                 let significand =
                     (unsigned_integer * 10_u64.pow(decimal_places + zeros as u32)) + fraction;
-                let exponent = exponent - (decimal_places as i16);
+                let exponent = exponent - (decimal_places as i16 + zeros as i16);
                 (significand, exponent)
             } else {
                 (unsigned_integer, exponent)
@@ -1593,9 +1593,10 @@ mod tests {
     fn from_scientific_parts() {
         let n1 = SciDecimal::from_scientific_parts(67, 0, 2, 0, 0); // 67.2
         assert_eq!(n1.to_string(), "67.2");
-        assert_eq!(n1, SciDecimal::new(670, -1));
+        assert_eq!(n1, SciDecimal::new(672, -1));
 
         let n2 = SciDecimal::from_scientific_parts(67, 1, 0, 0, 0); // 67.0
+        dbg!(n2);
         assert_eq!(n2.to_string(), "67.0");
         assert_eq!(n2, SciDecimal::new(670, -1));
 
