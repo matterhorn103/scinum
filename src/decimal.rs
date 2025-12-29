@@ -1415,31 +1415,52 @@ impl_arithmetic_int!(u64);
 
 impl fmt::Display for SciDecimal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        dbg!(self);
+        let sign = if self.negative {
+            String::from("-")
+        } else {
+            String::new()
+        };
         let significand = self.significand;
         let uncertainty = if self.is_exact() {
             String::new()
         } else {
             format!("({})", self.uncertainty)
         };
-        // Display up to five places normally
-        // If the number has more than five places,
-        // or insignificant zeros before the decimal point,
-        // display in scientific notation
-        if self.precision_most_significant_fig() <= 5 && self.precision_most_significant_fig() >= -5
+        // Numbers with up to five places either side of the decimal point should
+        // be displayed using normal notation:
+        // - 0.0325 = 3.25e-2 = (325, -4) => "0.0325"
+        // - 85.130 = 8.5130e1 = (85130, -3) => "85.130"
+        // If this is exceeded, display in scientific notation:
+        // - 0.000325 = 3.25e-4 = (325, -6) => "3.25e-4"
+        // - 8174036 = 8.174036e6 = (8174036, 0) => "8.174036e6"
+        // Scientific notation should also be used if there are insignificant zeros
+        // before the decimal point, so that the precision is indicated:
+        // - 81700 with 3 sf = 8.17e4 = (817, 2) => "8.17e4"
+        // - 81700 with 5 sf = 8.1700e4 = (81700, 0) => "81700"
+        if self.precision() <= 0 && self.precision() >= -5 && self.precision_most_significant_fig() <= 4
         {
+            // Integers
             if self.precision() == 0 {
-                write!(f, "{significand}{uncertainty}")
+                write!(f, "{sign}{significand}{uncertainty}")
+            // Numbers with both integral and fractional parts
+            } else if self.precision_most_significant_fig() >= 0 {
+                // 3.1 has precision = -1, sigfigs = 2
+                // 42.764 has precision = -3, sigfigs = 5
+                // 3.02 has precision = -2, sigfigs = 3
+                let int_figs = self.sigfigs() as u16 - self.precision().unsigned_abs();
+                let mut int = significand.to_string();
+                let frac = int.split_off(int_figs.into());
+                write!(f, "{sign}{int}.{frac}{uncertainty}")
+            // Numbers with only a fractional part
             } else {
-                // 3.25e-2 is (325, -4), should be formatted as 0.0325
-                dbg!(self.precision());
-                dbg!(self.sigfigs());
-                let zeros =
+                // 0.005 needs to have two zeros, precision = -3, sigfigs = 1
+                let zeros = // (-3).abs() - 1 = 2
                     "0".repeat((self.precision().unsigned_abs() - self.sigfigs() as u16).into());
-                write!(f, "0.{zeros}{significand}{uncertainty}")
+                write!(f, "{sign}0.{zeros}{significand}{uncertainty}")
             }
         // Otherwise, use scientific notation
         } else {
-            dbg!(&self);
             let (int, zeros, frac, _, exp) = self.scientific_parts();
             dbg!(exp);
             let zeros = "0".repeat(zeros.into());
@@ -2018,21 +2039,45 @@ mod tests {
 
     #[test]
     fn display() {
-        // Small integers display normally
+        // Numbers with up to five places either side of the decimal point should
+        // be displayed using normal notation
+        // Integers should display without any decimal point at all
         assert_eq!(SciDecimal::new(20, 0).to_string(), "20");
-        // Numbers with most significant figure within 5 places of 0 display normally
+        assert_eq!(SciDecimal::new(-20, 0).to_string(), "-20");
         assert_eq!(SciDecimal::new(99999, 0).to_string(), "99999");
+        assert_eq!(SciDecimal::new(10000, 0).to_string(), "10000");
+        assert_eq!(SciDecimal::new(1000, 0).to_string(), "1000");
+        assert_eq!(SciDecimal::new(100, 0).to_string(), "100");
+        assert_eq!(SciDecimal::new(10, 0).to_string(), "10");
+        assert_eq!(SciDecimal::new(1, 0).to_string(), "1");
+        assert_eq!(SciDecimal::new(1, -1).to_string(), "0.1");
+        assert_eq!(SciDecimal::new(1, -2).to_string(), "0.01");
+        assert_eq!(SciDecimal::new(1, -3).to_string(), "0.001");
+        assert_eq!(SciDecimal::new(1, -4).to_string(), "0.0001");
+        assert_eq!(SciDecimal::new(1, -5).to_string(), "0.00001");
         assert_eq!(SciDecimal::from(dec!(0.00001)).to_string(), "0.00001");
-        // Even with lots of places
-        assert_eq!(sci!(2569.29854).to_string(), "2569.29854");
-        assert_eq!(sci!(25.690341).to_string(), "25.690341");
-        // Large or small numbers (outside of the above range) use scientific notation
+        assert_eq!(SciDecimal::new(325, -4).to_string(), "0.0325");
+        assert_eq!(SciDecimal::new(-325, -4).to_string(), "-0.0325");
+        dbg!("Reached here");
+        assert_eq!(SciDecimal::new(85130, -3).to_string(), "85.130");
+        //dbg!(sci!(25691.29854));
+        assert_eq!(sci!(25691.29854).to_string(), "25691.29854");
+        // If the maximum number of places (5) is exceeded, use scientific notation
         assert_eq!(SciDecimal::new(1295891, 0).to_string(), "1.295891e6");
+        assert_eq!(SciDecimal::new(325, -6).to_string(), "3.25e-4"); // Not 0.000325
+        assert_eq!(SciDecimal::new(-325, -6).to_string(), "-3.25e-4");
+        assert_eq!(SciDecimal::new(8174036, 0).to_string(), "8.174036e6");
         assert_eq!(SciDecimal::from(dec!(0.000000432)).to_string(), "4.32e-7");
-        // Explicit zeros should be treated as significant
+        // Importantly, explicit zeros should be treated as significant
         assert_eq!(SciDecimal::new(1295800, 0).to_string(), "1.295800e6");
-        // Here they shouldn't be
-        assert_eq!(sci!(1.2958e6).to_string(), "1.2958e6");
+        // Scientific notation should also be used if there are insignificant zeros
+        // before the decimal point, even when the maximum number of places (5)
+        // is not exceeded, so that the precision is indicated
+        // 81700 with 3 sf = 8.17e4 = (817, 2) => "8.17e4"
+        assert_eq!(SciDecimal::new(817, 2).to_string(), "8.17e4");
+        // 81700 with 5 sf = 8.1700e4 = (81700, 0) => "81700"
+        assert_eq!(SciDecimal::new(81700, 0).to_string(), "81700");
+
         // Check uncertainty formatting
         assert_eq!(SciDecimal::new_with_uncertainty(20, 2, 0).to_string(), "20(2)");
         // TODO: More uncertainty display tests
