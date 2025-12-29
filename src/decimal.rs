@@ -2,9 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 use std::{
-    fmt::{self, Debug},
-    ops::{Add, Div, Mul, Neg, Rem, Sub},
-    str::FromStr,
+    cmp::Ordering, fmt::{self, Debug}, ops::{Add, Div, Mul, Neg, Rem, Sub}, str::FromStr
 };
 
 use num_traits::{FromPrimitive, Inv, Num, One, Pow, Zero};
@@ -1056,20 +1054,27 @@ impl Add for SciDecimal {
         // TODO If significand would be too large for u64, just round it and
         // increase the exponent instead of panicking
 
-        // In the simplest case, the exponents are the same
-        // Otherwise have to try and set the exponent to the same for both terms
-        // Use whichever exponent is smallest
-        if self.exponent != rhs.exponent {
-            if self.exponent < rhs.exponent {
+        let exact = match self.exponent.cmp(&rhs.exponent) {
+            // In the simplest case, the exponents are the same
+            Ordering::Equal => {
+                let number = self.significand_signed() + rhs.significand_signed();
+                Self::new(number, self.exponent())
+            }
+            // Otherwise have to try and set the exponent to the same for both terms
+            // Use whichever exponent is smallest
+            Ordering::Less => {
                 let exp_diff = rhs.exponent.0 - self.exponent.0;
-                rhs.increase_precision(exp_diff.try_into().unwrap());
-            } else {
+                let scaled = rhs.increase_precision(exp_diff.try_into().unwrap());
+                let number = self.significand_signed() + scaled.significand_signed();
+                Self::new(number, self.exponent())
+            }
+            Ordering::Greater => {
                 let exp_diff = self.exponent.0 - rhs.exponent.0;
-                self.increase_precision(exp_diff.try_into().unwrap());
+                let scaled = self.increase_precision(exp_diff.try_into().unwrap());
+                let number = scaled.significand_signed() + rhs.significand_signed();
+                Self::new(number, scaled.exponent())
             }
         };
-        let number = self.significand_signed() + rhs.significand_signed();
-        let exact = Self::new(number, self.exponent());
         if self.is_exact() && rhs.is_exact() {
             exact
         } else {
@@ -1772,15 +1777,14 @@ mod tests {
     }
 
     #[test]
-    fn add_sf() {
+    fn increase_precision() {
         // Currently fails due to Display failing
         //let n = sci!(25.69);
         //assert_eq!(n.to_string(), "25.69");
         //assert_eq!(n.add_sf(2).to_string(), "25.6900");
         let n2 = sci!(2.69e7);
         assert_eq!(n2.to_string(), "2.69e7");
-        n2.increase_precision(2);
-        assert_eq!(n2.to_string(), "2.6900e7");
+        assert_eq!(n2.increase_precision(2).to_string(), "2.6900e7");
     }
 
     #[test]
