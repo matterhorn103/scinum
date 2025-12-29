@@ -87,7 +87,7 @@ impl BiasedExponent {
     /// Returns true if the exponent is equal to 0 in the signed integer form.
     #[inline]
     fn is_zero(&self) -> bool {
-        self.0 == 0
+        self.0 == Self::EXPONENT_BIAS
     }
 }
 
