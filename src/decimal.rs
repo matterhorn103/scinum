@@ -154,7 +154,7 @@ impl SciNumeric for SciDecimal {
             uncertainty: 0,
             uncertainty_scale: 0,
             negative: false,
-            exponent: self.exponent,
+            exponent: BiasedExponent(self.exponent.0 - self.uncertainty_scale as u16),
             significand: self.uncertainty.into(),
         }
     }
