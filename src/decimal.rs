@@ -245,8 +245,6 @@ impl SciDecimal {
         } else {
             uncertainty
         };
-        dbg!(self.exponent());
-        dbg!(narrowed_uncertainty.exponent());
         self.uncertainty_scale = (self.exponent.0 - narrowed_uncertainty.exponent.0)
             .try_into()
             .expect(
@@ -659,8 +657,6 @@ impl SciDecimal {
     ///
     /// The uncertainty of the `SciDecimal` is left unchanged.
     pub fn checked_increase_precision(mut self, sf: u8) -> Option<Self> {
-        //dbg!("In method scope");
-        //dbg!(self);
         for _ in 0..sf {
             self.significand = self.significand.checked_mul(10)?;
             // Exponent is now too large
@@ -670,7 +666,6 @@ impl SciDecimal {
                 self.uncertainty_scale = self.uncertainty_scale.checked_sub(1)?;
             };
         }
-        //dbg!(self);
         Some(self)
     }
 }
@@ -1178,7 +1173,6 @@ impl Div for SciDecimal {
         let mut iterations: u8 = 0;
         let mut max_precision_reached = false;
         while !lhs.significand.is_multiple_of(rhs.significand) {
-            dbg!(lhs.significand);
             iterations += 1;
             if iterations > 100 {
                 panic!("{}", iterations)
@@ -1191,15 +1185,6 @@ impl Div for SciDecimal {
                 },
             }
         }
-        //let mut scaled = self;
-        //if !scaled.significand.is_multiple_of(rhs.significand) {
-        //    dbg!("Before");
-        //    dbg!(scaled);
-        //    scaled = scaled.checked_increase_precision(1).unwrap();
-        //    dbg!("After");
-        //    dbg!(scaled);
-        //    panic!()
-        //}
         let significand = if max_precision_reached {
             // TODO Go via u128 and then round (not truncate) to precision of u64
             lhs.significand / rhs.significand
@@ -1415,7 +1400,6 @@ impl_arithmetic_int!(u64);
 
 impl fmt::Display for SciDecimal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        dbg!(self);
         let sign = if self.negative {
             String::from("-")
         } else {
@@ -1462,7 +1446,6 @@ impl fmt::Display for SciDecimal {
         // Otherwise, use scientific notation
         } else {
             let (int, zeros, frac, _, exp) = self.scientific_parts();
-            dbg!(exp);
             let zeros = "0".repeat(zeros.into());
             // Fractional part might not have any places at all (e.g. 2e6)
             if frac == 0 {
@@ -1485,14 +1468,24 @@ impl FromStr for SciDecimal {
         // Example given with "6.971e-7"
         let negative = caps.get(1).is_some(); // false
         let mut significand_str = String::new();
-        let int = caps.get(2).map_or("0", |m| m.as_str()); // "6"
+        let int = caps.get(2).map_or("", |m| m.as_str()); // "6"
         //.ok_or(SciNumError::Parse(s.into()))?.as_str();
-        significand_str.push_str(int);
         let frac = caps.get(3).map_or("", |m| m.as_str()); // "971"
+        let frac_places = frac.len(); // 3
+        // Avoid adding leading zeros to the significand
+        if frac_places == 0 || int != "0" {
+            significand_str.push_str(int);
+        }
         significand_str.push_str(frac);
+        let mut truncated_places: i16 = 0;
+        // If the precision in the string is too high, truncate to 16 sf
+        // TODO: Consider rounding rather than truncating
+        while significand_str.len() > 16 {
+            significand_str.pop();
+            truncated_places += 1;
+        }
         let significand =
             u64::from_str(&significand_str).map_err(|_e| SciNumError::Parse(s.into()))?; // "6971"
-        let frac_places = frac.len(); // 3
         let uncertainty = caps
             .get(4)
             .map_or(Ok(0), |m| u32::from_str(m.as_str()))
@@ -1500,13 +1493,15 @@ impl FromStr for SciDecimal {
         let exponent = caps
             .get(5)
             .map_or(Ok(0), |m| i16::from_str(m.as_str()))
-            .map_err(|_e| SciNumError::Parse(s.into()))?; // -7
+            .map_err(|_e| SciNumError::Parse(s.into()))?
+            - frac_places as i16
+            + truncated_places; // -7
         // "6.971e-7" should be represented as (6971, -10)
         Ok(Self {
             uncertainty,
             uncertainty_scale: 0,
             negative,
-            exponent: (exponent - frac_places as i16).into(),
+            exponent: exponent.into(),
             significand,
         })
     }
@@ -2109,6 +2104,11 @@ mod tests {
         );
         // Capital E for exponent
         assert_eq!(SciDecimal::from_str("1.5E8").unwrap(), SciDecimal::new(15, 7));
+        // 16 significant figures must always be fine
+        assert_eq!(SciDecimal::from_str("0.5293040185492948").unwrap(), SciDecimal::new(5293040185492948, -16));
+        // Excess precision should be silently truncated to 16 sf
+        // TODO: maybe in future should be rounded rather than truncated?
+        assert_eq!(SciDecimal::from_str("0.529304018549294841").unwrap(), SciDecimal::new(5293040185492948, -16));
         // Make sure incorrectly formatted strings fail
         assert!(SciDecimal::from_str("not a number").is_err());
         assert!(SciDecimal::from_str("x.482").is_err());
