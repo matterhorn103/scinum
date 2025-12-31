@@ -1480,12 +1480,13 @@ impl FromStr for SciDecimal {
     /// Parses a string and attempts to create a corresponding `SciDecimal`.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         //let re = Regex::new(r"^(-?\d+(?:[.,]\d+)?)(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
-        let re = Regex::new(r"^(-)?(\d+)(?:[.,](\d+))?(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
+        let re = Regex::new(r"^(-)?(\d+)?(?:[.,](\d+))?(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
         let caps = re.captures(s).ok_or(SciNumError::Parse(s.into()))?;
         // Example given with "6.971e-7"
         let negative = caps.get(1).is_some(); // false
         let mut significand_str = String::new();
-        let int = caps.get(2).ok_or(SciNumError::Parse(s.into()))?.as_str(); // "6"
+        let int = caps.get(2).map_or("0", |m| m.as_str()); // "6"
+        //.ok_or(SciNumError::Parse(s.into()))?.as_str();
         significand_str.push_str(int);
         let frac = caps.get(3).map_or("", |m| m.as_str()); // "971"
         significand_str.push_str(frac);
@@ -2088,25 +2089,31 @@ mod tests {
     fn from_str() {
         // Integer
         assert_eq!(SciDecimal::from_str("42").unwrap(), SciDecimal::new(42, 0));
-        // Negative float
+        // Decimal
+        assert_eq!(SciDecimal::from_str("0.0859").unwrap(), SciDecimal::new(859, -4));
+        // Decimal without integral part before decimal point
+        assert_eq!(SciDecimal::from_str(".0859").unwrap(), SciDecimal::new(859, -4));
+        // Negative decimal
         assert_eq!(SciDecimal::from_str("-3.14").unwrap(), SciDecimal::new(-314, -2));
         // Scientific notation
         assert_eq!(SciDecimal::from_str("1.5e8").unwrap(), SciDecimal::new(15, 7));
-        // TODO large exponent fails with overflow error
-        assert_eq!(SciDecimal::from_str("1.5e10").unwrap(), SciDecimal::new(15, 9));
         // Scientific notation with negative exponent
         assert_eq!(SciDecimal::from_str("2e-5").unwrap(), SciDecimal::new(2, -5));
         // Negative number with positive exponent
         assert_eq!(SciDecimal::from_str("-6.022e6").unwrap(), SciDecimal::new(-6022, 3));
-        // Large exponent
+        // Large exponents
+        assert_eq!(SciDecimal::from_str("1.5e18").unwrap(), SciDecimal::new(15, 17));
         assert_eq!(
             SciDecimal::from_str("-6.022e23").unwrap(),
             SciDecimal::new(-6022, 20)
         );
         // Capital E for exponent
         assert_eq!(SciDecimal::from_str("1.5E8").unwrap(), SciDecimal::new(15, 7));
-        // Make sure incorrectly formatted string fails
+        // Make sure incorrectly formatted strings fail
         assert!(SciDecimal::from_str("not a number").is_err());
+        assert!(SciDecimal::from_str("x.482").is_err());
+        assert!(SciDecimal::from_str("52.x").is_err());
+        assert!(SciDecimal::from_str("-2.42F-4").is_err());
     }
 
     #[test]
