@@ -2,9 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 use std::{
-    fmt::{self, Debug},
-    ops::{Add, Div, Mul, Neg, Rem, Sub},
-    str::FromStr,
+    cmp::Ordering, fmt::{self, Debug}, ops::{Add, Div, Mul, Neg, Rem, Sub}, str::FromStr
 };
 
 use num_traits::{FromPrimitive, Inv, Num, One, Pow, Zero};
@@ -87,7 +85,7 @@ impl BiasedExponent {
     /// Returns true if the exponent is equal to 0 in the signed integer form.
     #[inline]
     fn is_zero(&self) -> bool {
-        self.0 == 0
+        self.0 == Self::EXPONENT_BIAS
     }
 }
 
@@ -214,7 +212,7 @@ impl SciDecimal {
     pub fn new_with_uncertainty(number: i128, uncertainty: u32, exponent: i16) -> Self {
         if !(MIN_NUMBER..=MAX_NUMBER).contains(&number)
         {
-            panic!()
+            panic!("{number} has too many significant figures for a significand!")
         }
         Self {
             uncertainty,
@@ -247,8 +245,6 @@ impl SciDecimal {
         } else {
             uncertainty
         };
-        dbg!(self.exponent());
-        dbg!(narrowed_uncertainty.exponent());
         self.uncertainty_scale = (self.exponent.0 - narrowed_uncertainty.exponent.0)
             .try_into()
             .expect(
@@ -306,11 +302,11 @@ impl SciDecimal {
     ) -> Self {
         let unsigned_integer: u64 = integer.unsigned_abs().into();
         let (significand, exponent) = {
-            if fraction != 0 {
-                let decimal_places = fraction.ilog10() + 1;
+            if fraction != 0 || zeros != 0 {
+                let decimal_places = if fraction == 0 { 0 } else { fraction.ilog10() + 1 };
                 let significand =
                     (unsigned_integer * 10_u64.pow(decimal_places + zeros as u32)) + fraction;
-                let exponent = exponent - (decimal_places as i16);
+                let exponent = exponent - (decimal_places as i16 + zeros as i16);
                 (significand, exponent)
             } else {
                 (unsigned_integer, exponent)
@@ -661,8 +657,6 @@ impl SciDecimal {
     ///
     /// The uncertainty of the `SciDecimal` is left unchanged.
     pub fn checked_increase_precision(mut self, sf: u8) -> Option<Self> {
-        //dbg!("In method scope");
-        //dbg!(self);
         for _ in 0..sf {
             self.significand = self.significand.checked_mul(10)?;
             // Exponent is now too large
@@ -672,7 +666,6 @@ impl SciDecimal {
                 self.uncertainty_scale = self.uncertainty_scale.checked_sub(1)?;
             };
         }
-        //dbg!(self);
         Some(self)
     }
 }
@@ -1056,20 +1049,27 @@ impl Add for SciDecimal {
         // TODO If significand would be too large for u64, just round it and
         // increase the exponent instead of panicking
 
-        // In the simplest case, the exponents are the same
-        // Otherwise have to try and set the exponent to the same for both terms
-        // Use whichever exponent is smallest
-        if self.exponent != rhs.exponent {
-            if self.exponent < rhs.exponent {
+        let exact = match self.exponent.cmp(&rhs.exponent) {
+            // In the simplest case, the exponents are the same
+            Ordering::Equal => {
+                let number = self.significand_signed() + rhs.significand_signed();
+                Self::new(number, self.exponent())
+            }
+            // Otherwise have to try and set the exponent to the same for both terms
+            // Use whichever exponent is smallest
+            Ordering::Less => {
                 let exp_diff = rhs.exponent.0 - self.exponent.0;
-                rhs.increase_precision(exp_diff.try_into().unwrap());
-            } else {
+                let scaled = rhs.increase_precision(exp_diff.try_into().unwrap());
+                let number = self.significand_signed() + scaled.significand_signed();
+                Self::new(number, self.exponent())
+            }
+            Ordering::Greater => {
                 let exp_diff = self.exponent.0 - rhs.exponent.0;
-                self.increase_precision(exp_diff.try_into().unwrap());
+                let scaled = self.increase_precision(exp_diff.try_into().unwrap());
+                let number = scaled.significand_signed() + rhs.significand_signed();
+                Self::new(number, scaled.exponent())
             }
         };
-        let number = self.significand_signed() + rhs.significand_signed();
-        let exact = Self::new(number, self.exponent());
         if self.is_exact() && rhs.is_exact() {
             exact
         } else {
@@ -1173,7 +1173,6 @@ impl Div for SciDecimal {
         let mut iterations: u8 = 0;
         let mut max_precision_reached = false;
         while !lhs.significand.is_multiple_of(rhs.significand) {
-            dbg!(lhs.significand);
             iterations += 1;
             if iterations > 100 {
                 panic!("{}", iterations)
@@ -1186,15 +1185,6 @@ impl Div for SciDecimal {
                 },
             }
         }
-        //let mut scaled = self;
-        //if !scaled.significand.is_multiple_of(rhs.significand) {
-        //    dbg!("Before");
-        //    dbg!(scaled);
-        //    scaled = scaled.checked_increase_precision(1).unwrap();
-        //    dbg!("After");
-        //    dbg!(scaled);
-        //    panic!()
-        //}
         let significand = if max_precision_reached {
             // TODO Go via u128 and then round (not truncate) to precision of u64
             lhs.significand / rhs.significand
@@ -1410,33 +1400,52 @@ impl_arithmetic_int!(u64);
 
 impl fmt::Display for SciDecimal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let sign = if self.negative {
+            String::from("-")
+        } else {
+            String::new()
+        };
         let significand = self.significand;
         let uncertainty = if self.is_exact() {
             String::new()
         } else {
             format!("({})", self.uncertainty)
         };
-        // Display up to five places normally
-        // If the number has more than five places,
-        // or insignificant zeros before the decimal point,
-        // display in scientific notation
-        if self.precision_most_significant_fig() <= 5 && self.precision_most_significant_fig() >= -5
+        // Numbers with up to five places either side of the decimal point should
+        // be displayed using normal notation:
+        // - 0.0325 = 3.25e-2 = (325, -4) => "0.0325"
+        // - 85.130 = 8.5130e1 = (85130, -3) => "85.130"
+        // If this is exceeded, display in scientific notation:
+        // - 0.000325 = 3.25e-4 = (325, -6) => "3.25e-4"
+        // - 8174036 = 8.174036e6 = (8174036, 0) => "8.174036e6"
+        // Scientific notation should also be used if there are insignificant zeros
+        // before the decimal point, so that the precision is indicated:
+        // - 81700 with 3 sf = 8.17e4 = (817, 2) => "8.17e4"
+        // - 81700 with 5 sf = 8.1700e4 = (81700, 0) => "81700"
+        if self.precision() <= 0 && self.precision() >= -5 && self.precision_most_significant_fig() <= 4
         {
+            // Integers
             if self.precision() == 0 {
-                write!(f, "{significand}{uncertainty}")
+                write!(f, "{sign}{significand}{uncertainty}")
+            // Numbers with both integral and fractional parts
+            } else if self.precision_most_significant_fig() >= 0 {
+                // 3.1 has precision = -1, sigfigs = 2
+                // 42.764 has precision = -3, sigfigs = 5
+                // 3.02 has precision = -2, sigfigs = 3
+                let int_figs = self.sigfigs() as u16 - self.precision().unsigned_abs();
+                let mut int = significand.to_string();
+                let frac = int.split_off(int_figs.into());
+                write!(f, "{sign}{int}.{frac}{uncertainty}")
+            // Numbers with only a fractional part
             } else {
-                // 3.25e-2 is (325, -4), should be formatted as 0.0325
-                dbg!(self.precision());
-                dbg!(self.sigfigs());
-                let zeros =
+                // 0.005 needs to have two zeros, precision = -3, sigfigs = 1
+                let zeros = // (-3).abs() - 1 = 2
                     "0".repeat((self.precision().unsigned_abs() - self.sigfigs() as u16).into());
-                write!(f, "0.{zeros}{significand}{uncertainty}")
+                write!(f, "{sign}0.{zeros}{significand}{uncertainty}")
             }
         // Otherwise, use scientific notation
         } else {
-            dbg!(&self);
             let (int, zeros, frac, _, exp) = self.scientific_parts();
-            dbg!(exp);
             let zeros = "0".repeat(zeros.into());
             // Fractional part might not have any places at all (e.g. 2e6)
             if frac == 0 {
@@ -1454,18 +1463,29 @@ impl FromStr for SciDecimal {
     /// Parses a string and attempts to create a corresponding `SciDecimal`.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         //let re = Regex::new(r"^(-?\d+(?:[.,]\d+)?)(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
-        let re = Regex::new(r"^(-)?(\d+)(?:[.,](\d+))?(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
+        let re = Regex::new(r"^(-)?(\d+)?(?:[.,](\d+))?(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
         let caps = re.captures(s).ok_or(SciNumError::Parse(s.into()))?;
         // Example given with "6.971e-7"
         let negative = caps.get(1).is_some(); // false
         let mut significand_str = String::new();
-        let int = caps.get(2).ok_or(SciNumError::Parse(s.into()))?.as_str(); // "6"
-        significand_str.push_str(int);
+        let int = caps.get(2).map_or("", |m| m.as_str()); // "6"
+        //.ok_or(SciNumError::Parse(s.into()))?.as_str();
         let frac = caps.get(3).map_or("", |m| m.as_str()); // "971"
+        let frac_places = frac.len(); // 3
+        // Avoid adding leading zeros to the significand
+        if frac_places == 0 || int != "0" {
+            significand_str.push_str(int);
+        }
         significand_str.push_str(frac);
+        let mut truncated_places: i16 = 0;
+        // If the precision in the string is too high, truncate to 16 sf
+        // TODO: Consider rounding rather than truncating
+        while significand_str.len() > 16 {
+            significand_str.pop();
+            truncated_places += 1;
+        }
         let significand =
             u64::from_str(&significand_str).map_err(|_e| SciNumError::Parse(s.into()))?; // "6971"
-        let frac_places = frac.len(); // 3
         let uncertainty = caps
             .get(4)
             .map_or(Ok(0), |m| u32::from_str(m.as_str()))
@@ -1473,13 +1493,15 @@ impl FromStr for SciDecimal {
         let exponent = caps
             .get(5)
             .map_or(Ok(0), |m| i16::from_str(m.as_str()))
-            .map_err(|_e| SciNumError::Parse(s.into()))?; // -7
+            .map_err(|_e| SciNumError::Parse(s.into()))?
+            - frac_places as i16
+            + truncated_places; // -7
         // "6.971e-7" should be represented as (6971, -10)
         Ok(Self {
             uncertainty,
             uncertainty_scale: 0,
             negative,
-            exponent: (exponent - frac_places as i16).into(),
+            exponent: exponent.into(),
             significand,
         })
     }
@@ -1567,9 +1589,10 @@ mod tests {
     fn from_scientific_parts() {
         let n1 = SciDecimal::from_scientific_parts(67, 0, 2, 0, 0); // 67.2
         assert_eq!(n1.to_string(), "67.2");
-        assert_eq!(n1, SciDecimal::new(670, -1));
+        assert_eq!(n1, SciDecimal::new(672, -1));
 
         let n2 = SciDecimal::from_scientific_parts(67, 1, 0, 0, 0); // 67.0
+        dbg!(n2);
         assert_eq!(n2.to_string(), "67.0");
         assert_eq!(n2, SciDecimal::new(670, -1));
 
@@ -1772,15 +1795,14 @@ mod tests {
     }
 
     #[test]
-    fn add_sf() {
+    fn increase_precision() {
         // Currently fails due to Display failing
         //let n = sci!(25.69);
         //assert_eq!(n.to_string(), "25.69");
         //assert_eq!(n.add_sf(2).to_string(), "25.6900");
         let n2 = sci!(2.69e7);
         assert_eq!(n2.to_string(), "2.69e7");
-        n2.increase_precision(2);
-        assert_eq!(n2.to_string(), "2.6900e7");
+        assert_eq!(n2.increase_precision(2).to_string(), "2.6900e7");
     }
 
     #[test]
@@ -2014,21 +2036,45 @@ mod tests {
 
     #[test]
     fn display() {
-        // Small integers display normally
+        // Numbers with up to five places either side of the decimal point should
+        // be displayed using normal notation
+        // Integers should display without any decimal point at all
         assert_eq!(SciDecimal::new(20, 0).to_string(), "20");
-        // Numbers with most significant figure within 5 places of 0 display normally
+        assert_eq!(SciDecimal::new(-20, 0).to_string(), "-20");
         assert_eq!(SciDecimal::new(99999, 0).to_string(), "99999");
+        assert_eq!(SciDecimal::new(10000, 0).to_string(), "10000");
+        assert_eq!(SciDecimal::new(1000, 0).to_string(), "1000");
+        assert_eq!(SciDecimal::new(100, 0).to_string(), "100");
+        assert_eq!(SciDecimal::new(10, 0).to_string(), "10");
+        assert_eq!(SciDecimal::new(1, 0).to_string(), "1");
+        assert_eq!(SciDecimal::new(1, -1).to_string(), "0.1");
+        assert_eq!(SciDecimal::new(1, -2).to_string(), "0.01");
+        assert_eq!(SciDecimal::new(1, -3).to_string(), "0.001");
+        assert_eq!(SciDecimal::new(1, -4).to_string(), "0.0001");
+        assert_eq!(SciDecimal::new(1, -5).to_string(), "0.00001");
         assert_eq!(SciDecimal::from(dec!(0.00001)).to_string(), "0.00001");
-        // Even with lots of places
-        assert_eq!(sci!(2569.29854).to_string(), "2569.29854");
-        assert_eq!(sci!(25.690341).to_string(), "25.690341");
-        // Large or small numbers (outside of the above range) use scientific notation
+        assert_eq!(SciDecimal::new(325, -4).to_string(), "0.0325");
+        assert_eq!(SciDecimal::new(-325, -4).to_string(), "-0.0325");
+        dbg!("Reached here");
+        assert_eq!(SciDecimal::new(85130, -3).to_string(), "85.130");
+        //dbg!(sci!(25691.29854));
+        assert_eq!(sci!(25691.29854).to_string(), "25691.29854");
+        // If the maximum number of places (5) is exceeded, use scientific notation
         assert_eq!(SciDecimal::new(1295891, 0).to_string(), "1.295891e6");
+        assert_eq!(SciDecimal::new(325, -6).to_string(), "3.25e-4"); // Not 0.000325
+        assert_eq!(SciDecimal::new(-325, -6).to_string(), "-3.25e-4");
+        assert_eq!(SciDecimal::new(8174036, 0).to_string(), "8.174036e6");
         assert_eq!(SciDecimal::from(dec!(0.000000432)).to_string(), "4.32e-7");
-        // Explicit zeros should be treated as significant
+        // Importantly, explicit zeros should be treated as significant
         assert_eq!(SciDecimal::new(1295800, 0).to_string(), "1.295800e6");
-        // Here they shouldn't be
-        assert_eq!(sci!(1.2958e6).to_string(), "1.2958e6");
+        // Scientific notation should also be used if there are insignificant zeros
+        // before the decimal point, even when the maximum number of places (5)
+        // is not exceeded, so that the precision is indicated
+        // 81700 with 3 sf = 8.17e4 = (817, 2) => "8.17e4"
+        assert_eq!(SciDecimal::new(817, 2).to_string(), "8.17e4");
+        // 81700 with 5 sf = 8.1700e4 = (81700, 0) => "81700"
+        assert_eq!(SciDecimal::new(81700, 0).to_string(), "81700");
+
         // Check uncertainty formatting
         assert_eq!(SciDecimal::new_with_uncertainty(20, 2, 0).to_string(), "20(2)");
         // TODO: More uncertainty display tests
@@ -2038,25 +2084,36 @@ mod tests {
     fn from_str() {
         // Integer
         assert_eq!(SciDecimal::from_str("42").unwrap(), SciDecimal::new(42, 0));
-        // Negative float
+        // Decimal
+        assert_eq!(SciDecimal::from_str("0.0859").unwrap(), SciDecimal::new(859, -4));
+        // Decimal without integral part before decimal point
+        assert_eq!(SciDecimal::from_str(".0859").unwrap(), SciDecimal::new(859, -4));
+        // Negative decimal
         assert_eq!(SciDecimal::from_str("-3.14").unwrap(), SciDecimal::new(-314, -2));
         // Scientific notation
         assert_eq!(SciDecimal::from_str("1.5e8").unwrap(), SciDecimal::new(15, 7));
-        // TODO large exponent fails with overflow error
-        assert_eq!(SciDecimal::from_str("1.5e10").unwrap(), SciDecimal::new(15, 9));
         // Scientific notation with negative exponent
         assert_eq!(SciDecimal::from_str("2e-5").unwrap(), SciDecimal::new(2, -5));
         // Negative number with positive exponent
         assert_eq!(SciDecimal::from_str("-6.022e6").unwrap(), SciDecimal::new(-6022, 3));
-        // Large exponent
+        // Large exponents
+        assert_eq!(SciDecimal::from_str("1.5e18").unwrap(), SciDecimal::new(15, 17));
         assert_eq!(
             SciDecimal::from_str("-6.022e23").unwrap(),
             SciDecimal::new(-6022, 20)
         );
         // Capital E for exponent
         assert_eq!(SciDecimal::from_str("1.5E8").unwrap(), SciDecimal::new(15, 7));
-        // Make sure incorrectly formatted string fails
+        // 16 significant figures must always be fine
+        assert_eq!(SciDecimal::from_str("0.5293040185492948").unwrap(), SciDecimal::new(5293040185492948, -16));
+        // Excess precision should be silently truncated to 16 sf
+        // TODO: maybe in future should be rounded rather than truncated?
+        assert_eq!(SciDecimal::from_str("0.529304018549294841").unwrap(), SciDecimal::new(5293040185492948, -16));
+        // Make sure incorrectly formatted strings fail
         assert!(SciDecimal::from_str("not a number").is_err());
+        assert!(SciDecimal::from_str("x.482").is_err());
+        assert!(SciDecimal::from_str("52.x").is_err());
+        assert!(SciDecimal::from_str("-2.42F-4").is_err());
     }
 
     #[test]
