@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2025 Matthew Milner <matterhorn103@proton.me>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
-use crate::SciNum;
+use crate::SciNumeric;
 
-pub type SciFloat = SciNum<f64>;
+pub struct SciFloat {
+    number: f64,
+    uncertainty: f64,
+}

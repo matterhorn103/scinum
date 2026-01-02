@@ -1,10 +1,10 @@
 mod error;
-mod decimal;
 mod float;
 mod num;
 mod numeric;
+mod bigdecimal;
 
 pub use numeric::SciNumeric;
 pub use num::SciNum;
 pub use float::SciFloat;
-pub use decimal::SciDecimal;
+pub use bigdecimal::SciBigDecimal;
