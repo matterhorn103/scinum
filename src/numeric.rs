@@ -5,7 +5,7 @@ use num_traits::Num;
 
 /// A trait for numeric types that have an associated uncertainty.
 pub trait SciNumeric: Num {
-    /// The type that is returned by accessing the number or uncertainty
+    /// The type that is returned by accessing the number or uncertainty.
     type Numeric: Num;
 
     /// Returns the number in exact form without its uncertainty.
@@ -15,4 +15,14 @@ pub trait SciNumeric: Num {
     ///
     /// The uncertainty is always positive.
     fn uncertainty(&self) -> Self::Numeric;
+
+    /// Returns the relative uncertainty as an exact number.
+    ///
+    /// The relative uncertainty is always positive.
+    fn relative_uncertainty(&self) -> Self::Numeric {
+        self.number() / self.uncertainty()
+    }
+
+    /// Creates a new number with the same value but the provided uncertainty.
+    fn with_uncertainty(self, uncertainty: Self::Numeric) -> Self;
 }
