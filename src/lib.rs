@@ -1,12 +1,12 @@
 mod error;
 mod float;
-mod num;
-mod numeric;
+mod decimal;
+mod scinum;
 mod bigdecimal;
 mod rounding;
 
-pub use numeric::SciNumeric;
-pub use num::SciNum;
+pub use scinum::SciNum;
+pub use decimal::SciDecimal;
 pub use float::SciFloat;
 pub use bigdecimal::SciBigDecimal;
 pub use rounding::RoundingMode;

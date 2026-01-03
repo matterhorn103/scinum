@@ -3,15 +3,15 @@
 
 use std::str::FromStr;
 
-use scinum::SciNum;
+use scinum::SciDecimal;
 
 #[test]
 fn it_adds_decimals() {
     fn add(a: &str, b: &str, c: &str) {
-        let a = SciNum::from_str(a).unwrap();
-        let b = SciNum::from_str(b).unwrap();
-        assert_eq!(a + b, SciNum::from_str(c).unwrap(), "{a} + {b}");
-        assert_eq!(b + a, SciNum::from_str(c).unwrap(), "{b} + {a}");
+        let a = SciDecimal::from_str(a).unwrap();
+        let b = SciDecimal::from_str(b).unwrap();
+        assert_eq!(a + b, SciDecimal::from_str(c).unwrap(), "{a} + {b}");
+        assert_eq!(b + a, SciDecimal::from_str(c).unwrap(), "{b} + {a}");
     }
 
     let tests = &[
@@ -141,9 +141,9 @@ fn it_adds_decimals() {
 #[test]
 fn it_subtracts_decimals() {
     fn sub(a: &str, b: &str, c: &str) {
-        let a = SciNum::from_str(a).unwrap();
-        let b = SciNum::from_str(b).unwrap();
-        assert_eq!(a - b, SciNum::from_str(c).unwrap(), "{a} - {b}");
+        let a = SciDecimal::from_str(a).unwrap();
+        let b = SciDecimal::from_str(b).unwrap();
+        assert_eq!(a - b, SciDecimal::from_str(c).unwrap(), "{a} - {b}");
     }
 
     let tests = &[
@@ -201,10 +201,10 @@ fn it_subtracts_decimals() {
 #[test]
 fn it_multiplies_decimals() {
     fn mul(a: &str, b: &str, c: &str) {
-        let a = SciNum::from_str(a).unwrap();
-        let b = SciNum::from_str(b).unwrap();
-        assert_eq!(a * b, SciNum::from_str(c).unwrap(), "{a} * {b}");
-        assert_eq!(b * a, SciNum::from_str(c).unwrap(), "{b} * {a}");
+        let a = SciDecimal::from_str(a).unwrap();
+        let b = SciDecimal::from_str(b).unwrap();
+        assert_eq!(a * b, SciDecimal::from_str(c).unwrap(), "{a} * {b}");
+        assert_eq!(b * a, SciDecimal::from_str(c).unwrap(), "{b} * {a}");
     }
 
     let tests = &[
@@ -280,9 +280,9 @@ fn it_multiplies_decimals() {
 #[test]
 fn it_divides_decimals() {
     fn div(a: &str, b: &str, c: &str) {
-        let a = SciNum::from_str(a).unwrap();
-        let b = SciNum::from_str(b).unwrap();
-        assert_eq!(a / b, SciNum::from_str(c).unwrap(), "{a} / {b}");
+        let a = SciDecimal::from_str(a).unwrap();
+        let b = SciDecimal::from_str(b).unwrap();
+        assert_eq!(a / b, SciDecimal::from_str(c).unwrap(), "{a} / {b}");
     }
 
     let tests = &[
@@ -326,8 +326,8 @@ fn it_divides_decimals() {
 #[test]
 #[should_panic]
 fn it_can_divide_by_zero() {
-    let a = SciNum::from_str("2").unwrap();
-    let _ = a / SciNum::ZERO;
+    let a = SciDecimal::from_str("2").unwrap();
+    let _ = a / SciDecimal::ZERO;
 }
 
 //#[test]
@@ -353,10 +353,10 @@ fn it_can_divide_by_zero() {
 #[test]
 fn it_rems_decimals() {
     fn rem(a: &str, b: &str, c: &str) {
-        let a = SciNum::from_str(a).unwrap();
-        let b = SciNum::from_str(b).unwrap();
+        let a = SciDecimal::from_str(a).unwrap();
+        let b = SciDecimal::from_str(b).unwrap();
         // a = qb + r
-        assert_eq!(a % b, SciNum::from_str(c).unwrap(), "{a} % {b}");
+        assert_eq!(a % b, SciDecimal::from_str(c).unwrap(), "{a} % {b}");
     }
 
     let tests = &[

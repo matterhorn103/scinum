@@ -6,7 +6,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use bigdecimal::BigDecimal;
 use num_traits::{Num, One, Zero};
 
-use crate::{SciNum, SciNumeric};
+use crate::{SciDecimal, SciNum};
 
 #[derive(Clone, Debug)]
 pub struct SciBigDecimal {
@@ -24,18 +24,18 @@ impl SciBigDecimal {
     }
 }
 
-impl SciNumeric for SciBigDecimal {
-    type Numeric = BigDecimal;
+impl SciNum for SciBigDecimal {
+    type Number = BigDecimal;
 
-    fn number(&self) -> Self::Numeric {
+    fn number(&self) -> Self::Number {
         self.number.clone()
     }
 
-    fn uncertainty(&self) -> Self::Numeric {
+    fn uncertainty(&self) -> Self::Number {
         self.uncertainty.clone()
     }
 
-    fn with_uncertainty(self, uncertainty: Self::Numeric) -> Self {
+    fn with_uncertainty(self, uncertainty: Self::Number) -> Self {
         Self {
             number: self.number,
             uncertainty,
@@ -49,8 +49,8 @@ impl From<BigDecimal> for SciBigDecimal {
     }
 }
 
-impl From<SciNum> for SciBigDecimal {
-    fn from(n: SciNum) -> Self {
+impl From<SciDecimal> for SciBigDecimal {
+    fn from(n: SciDecimal) -> Self {
         Self { number: n.number().into(), uncertainty: n.uncertainty().into() }
     }
 }
