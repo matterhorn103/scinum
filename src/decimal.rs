@@ -1241,6 +1241,8 @@ impl Rem for SciDecimal {
     fn rem(self, rhs: Self) -> Self {
         let number =
             Decimal::try_from(self.number()).unwrap() % Decimal::try_from(rhs.number()).unwrap();
+        // Don't calculate uncertainty as the remainder function is discontinuous,
+        // making it tricky
         number.into()
     }
 }

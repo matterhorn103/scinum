@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Matthew Milner <matterhorn103@proton.me>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::{fmt::Display, ops::{Add, Div, Mul, Rem, Sub}};
 
 use bigdecimal::BigDecimal;
 use num_traits::{Num, One, Zero};
@@ -149,6 +149,14 @@ impl Rem for SciBigDecimal {
     /// and the returned result is exact.
     fn rem(self, rhs: Self) -> Self {
         let number = self.number % rhs.number;
+        // Don't calculate uncertainty as the remainder function is discontinuous,
+        // making it tricky
         number.into()
+    }
+}
+
+impl Display for SciBigDecimal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} +/- {}", self.number, self.uncertainty)
     }
 }
