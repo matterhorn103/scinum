@@ -3,8 +3,10 @@
 
 use num_traits::Num;
 
+use crate::SciNum;
+
 /// A trait for numeric types that have an associated uncertainty.
-pub trait SciNumeric: Num {
+pub trait SciNumeric: Num + TryFrom<SciNum> {
     /// The type that is returned by accessing the number or uncertainty.
     type Numeric: Num;
 
