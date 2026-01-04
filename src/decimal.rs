@@ -1,15 +1,16 @@
 // SPDX-FileCopyrightText: 2025 Matthew Milner <matterhorn103@proton.me>
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: MIT OR Apache-2.0
 
 use std::{
     cmp::Ordering, fmt::{self, Debug}, ops::{Add, Div, Mul, Neg, Rem, Sub}, str::FromStr
 };
 
+use bigdecimal::{BigDecimal, num_bigint::BigInt};
 use num_traits::{FromPrimitive, Inv, Num, One, Pow, Zero};
 use regex::Regex;
 use rust_decimal::{Decimal, MathematicalOps};
 
-use crate::{SciNumeric, error::SciNumError};
+use crate::{SciNum, error::SciNumError};
 
 /// A 16-bit signed exponent represented as a 16-bit unsigned integer by using a bias.
 /// 
@@ -132,8 +133,8 @@ pub struct SciDecimal {
 const MIN_NUMBER: i128 = -0xFFFFFFFFFFFFFFFF;
 const MAX_NUMBER: i128 = 0xFFFFFFFFFFFFFFFF;
 
-impl SciNumeric for SciDecimal {
-    type Numeric = SciDecimal;
+impl SciNum for SciDecimal {
+    type Number = SciDecimal;
 
     /// Returns the number as an exact `SciDecimal` without its uncertainty.
     #[inline]
@@ -157,6 +158,48 @@ impl SciNumeric for SciDecimal {
             exponent: BiasedExponent(self.exponent.0 - self.uncertainty_scale as u16),
             significand: self.uncertainty.into(),
         }
+    }
+
+    /// Returns the relative uncertainty as an exact `SciDecimal`.
+    ///
+    /// The relative uncertainty is always positive.
+    #[inline]
+    fn relative_uncertainty(&self) -> Self {
+        self.uncertainty() / self.number().abs()
+    }
+
+    /// Creates a new `SciDecimal` with the same number but the provided
+    /// uncertainty.
+    ///
+    /// If the uncertainty has a significand greater than `u32::MAX` (i.e. more
+    /// than ~9 significant figures), it is first truncated to 9 s.f.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scinum::SciDecimal;
+    /// #
+    /// let n = SciDecimal::new(251, -3).with_uncertainty(SciDecimal::new(3, -3));
+    /// assert_eq!(n.to_string(), "0.251(3)");
+    /// assert_eq!(n, SciDecimal::new_with_uncertainty(251, 3, -3));
+    #[inline]
+    fn with_uncertainty(mut self, uncertainty: Self) -> Self {
+        let narrowed_uncertainty = if uncertainty.significand > u32::MAX.into() {
+            uncertainty.truncate(9);
+            uncertainty
+        } else {
+            uncertainty
+        };
+        self.uncertainty_scale = (self.exponent.0 - narrowed_uncertainty.exponent.0)
+            .try_into()
+            .expect(
+                "Difference in precision of number and uncertainty should never be this large!",
+            );
+        self.uncertainty = narrowed_uncertainty
+            .significand
+            .try_into()
+            .expect("Already made sure that this is not greater than `u32::MAX`");
+        self
     }
 }
 
@@ -221,40 +264,6 @@ impl SciDecimal {
             exponent: exponent.into(),
             significand: number.unsigned_abs() as u64,
         }
-    }
-
-    /// Creates a new `SciDecimal` with the same number but the provided
-    /// uncertainty.
-    ///
-    /// If the uncertainty has a significand greater than `u32::MAX` (i.e. more
-    /// than ~9 significant figures), it is first truncated to 9 s.f.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use scinum::SciDecimal;
-    /// #
-    /// let n = SciDecimal::new(251, -3).with_uncertainty(SciDecimal::new(3, -3));
-    /// assert_eq!(n.to_string(), "0.251(3)");
-    /// assert_eq!(n, SciDecimal::new_with_uncertainty(251, 3, -3));
-    #[inline]
-    pub fn with_uncertainty(mut self, uncertainty: Self) -> Self {
-        let narrowed_uncertainty = if uncertainty.significand > u32::MAX.into() {
-            uncertainty.truncate(9);
-            uncertainty
-        } else {
-            uncertainty
-        };
-        self.uncertainty_scale = (self.exponent.0 - narrowed_uncertainty.exponent.0)
-            .try_into()
-            .expect(
-                "Difference in precision of number and uncertainty should never be this large!",
-            );
-        self.uncertainty = narrowed_uncertainty
-            .significand
-            .try_into()
-            .expect("Already made sure that this is not greater than `u32::MAX`");
-        self
     }
 
     /// Creates a `SciDecimal` from separate parts of a representation of the number in
@@ -352,14 +361,6 @@ impl SciDecimal {
         // 4.51e-3 = 0.00451 is stored as (451, -5) => -3 = -5 + (3 - 1)
         // 4.50e-3 = 0.00450 is stored as (450, -5) => -3 = -5 + (3 - 1)
         (int, zeros, frac, uncert, exp)
-    }
-
-    /// Returns the relative uncertainty as an exact `SciDecimal`.
-    ///
-    /// The relative uncertainty is always positive.
-    #[inline]
-    pub(crate) fn relative_uncertainty(&self) -> Self {
-        self.uncertainty() / self.number().abs()
     }
 
     /// Returns the significand _m_ of the number when represented with _m_ as
@@ -962,7 +963,8 @@ impl From<Decimal> for SciDecimal {
 impl TryFrom<SciDecimal> for Decimal {
     type Error = rust_decimal::Error;
 
-    /// Attempts to convert a `SciDecimal` into a `rust_decimal::Decimal`.
+    /// Attempts to convert a `SciDecimal` into a `rust_decimal::Decimal`, dropping
+    /// any uncertainty.
     ///
     /// Fails if `n` has a positive exponent or an exponent lower than −28.
     fn try_from(n: SciDecimal) -> Result<Decimal, rust_decimal::Error> {
@@ -974,6 +976,16 @@ impl TryFrom<SciDecimal> for Decimal {
                 (BiasedExponent::EXPONENT_BIAS - n.exponent.0).into(),
             )
         }
+    }
+}
+
+impl From<SciDecimal> for BigDecimal {
+    /// Converts a `SciDecimal` into a `bigdecimal::BigDecimal`, dropping any uncertainty.
+    fn from(n: SciDecimal) -> Self {
+        BigDecimal::from_bigint(
+            BigInt::from_i128(n.significand_signed()).unwrap(),
+            -(n.exponent()) as i64,
+        )
     }
 }
 
@@ -1224,11 +1236,13 @@ impl Rem for SciDecimal {
 
     /// Performs the `%` operation.
     ///
-    /// WARNING: Uncertainty propagation is not yet implemented for this method,
-    /// and the returned result will be exact.
+    /// NOTE: Uncertainty propagation is not implemented for this method,
+    /// and the returned result is exact.
     fn rem(self, rhs: Self) -> Self {
         let number =
             Decimal::try_from(self.number()).unwrap() % Decimal::try_from(rhs.number()).unwrap();
+        // Don't calculate uncertainty as the remainder function is discontinuous,
+        // making it tricky
         number.into()
     }
 }
