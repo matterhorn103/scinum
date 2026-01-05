@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2025 Matthew Milner <matterhorn103@proton.me>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use num_traits::Num;
+use num_traits::{Num, Zero};
 
 use crate::SciDecimal;
 
@@ -27,4 +27,9 @@ pub trait SciNum: Num + TryFrom<SciDecimal> {
 
     /// Creates a new number with the same value but the provided uncertainty.
     fn with_uncertainty(self, uncertainty: Self::Number) -> Self;
+
+    /// Returns true if the number has an uncertainty of zero.
+    fn is_exact(&self) -> bool {
+        self.uncertainty().is_zero()
+    }
 }

@@ -204,6 +204,12 @@ impl SciNum for SciDecimal {
             .expect("Already made sure that this is not greater than `u32::MAX`");
         self
     }
+
+    /// Returns true if the `SciDecimal` has an uncertainty of zero.
+    #[inline]
+    fn is_exact(&self) -> bool {
+        self.uncertainty == 0
+    }
 }
 
 impl SciDecimal {
@@ -412,12 +418,6 @@ impl SciDecimal {
         todo!()
     }
 
-    /// Returns true if the `SciDecimal` has an uncertainty of zero.
-    #[inline]
-    pub fn is_exact(&self) -> bool {
-        self.uncertainty == 0
-    }
-
     /// Returns true if the sign bit is negative.
     /// Zero is considered positive.
     #[inline(always)]
@@ -436,10 +436,9 @@ impl SciDecimal {
 
     /// Creates an exact `SciDecimal` from a float.
     ///
-    /// Currently this goes via `Decimal::try_from_f64()`.
-    pub fn from_f64(number: f64) -> Option<Self> {
-        let dec = Decimal::from_f64(number)?;
-        Some(dec.into())
+    /// Currently this goes via the string representation.
+    pub fn from_f64(n: f64) -> Option<Self> {
+        n.to_string().parse().ok()
     }
 
     //pub fn add_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
