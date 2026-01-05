@@ -793,7 +793,7 @@ impl SciDecimal {
         if self.is_exact() {
             exact
         } else {
-            let uncertainty = (self.relative_uncertainty() * n) * exact.abs();
+            let uncertainty = (self.relative_uncertainty() * n.into()) * exact.abs();
             exact.with_uncertainty(uncertainty)
         }
     }
@@ -1338,83 +1338,6 @@ impl Inv for &SciDecimal {
     }
 }
 
-macro_rules! impl_arithmetic_int {
-    ($t:ty) => {
-        impl Add<$t> for SciDecimal {
-            type Output = SciDecimal;
-
-            fn add(self, rhs: $t) -> SciDecimal {
-                self + SciDecimal::from(rhs)
-            }
-        }
-
-        impl Add<SciDecimal> for $t {
-            type Output = SciDecimal;
-
-            fn add(self, rhs: SciDecimal) -> SciDecimal {
-                SciDecimal::from(self) + rhs
-            }
-        }
-
-        impl Sub<$t> for SciDecimal {
-            type Output = Self;
-
-            fn sub(self, rhs: $t) -> SciDecimal {
-                self - SciDecimal::from(rhs)
-            }
-        }
-
-        impl Sub<SciDecimal> for $t {
-            type Output = SciDecimal;
-
-            fn sub(self, rhs: SciDecimal) -> SciDecimal {
-                SciDecimal::from(self) - rhs
-            }
-        }
-
-        impl Mul<$t> for SciDecimal {
-            type Output = Self;
-
-            fn mul(self, rhs: $t) -> SciDecimal {
-                self * SciDecimal::from(rhs)
-            }
-        }
-
-        impl Mul<SciDecimal> for $t {
-            type Output = SciDecimal;
-
-            fn mul(self, rhs: SciDecimal) -> SciDecimal {
-                SciDecimal::from(self) * rhs
-            }
-        }
-
-        impl Div<$t> for SciDecimal {
-            type Output = Self;
-
-            fn div(self, rhs: $t) -> SciDecimal {
-                self / SciDecimal::from(rhs)
-            }
-        }
-
-        impl Div<SciDecimal> for $t {
-            type Output = SciDecimal;
-
-            fn div(self, rhs: SciDecimal) -> SciDecimal {
-                SciDecimal::from(self) / rhs
-            }
-        }
-    };
-}
-
-impl_arithmetic_int!(i8);
-impl_arithmetic_int!(i16);
-impl_arithmetic_int!(i32);
-impl_arithmetic_int!(i64);
-impl_arithmetic_int!(u8);
-impl_arithmetic_int!(u16);
-impl_arithmetic_int!(u32);
-impl_arithmetic_int!(u64);
-
 //impl Debug for SciDecimal {
 //    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 //        f.debug_struct("SciDecimal")
@@ -1857,14 +1780,6 @@ mod tests {
     }
 
     #[test]
-    fn add_with_int() {
-        let n1 = SciDecimal::new(20, 0);
-        let n2 = 30;
-        let result: SciDecimal = n1 + n2;
-        assert_eq!(result.number(), sci!(50));
-    }
-
-    #[test]
     fn sub_exact() {
         let n1 = SciDecimal::new(20, 0);
         let n2 = SciDecimal::new(30, 0);
@@ -1881,14 +1796,6 @@ mod tests {
             Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
             dec!(5.3851648071345).round_dp(5)
         );
-    }
-
-    #[test]
-    fn sub_with_int() {
-        let n1 = SciDecimal::new(20, 0);
-        let n2 = 30;
-        let result: SciDecimal = n1 - n2;
-        assert_eq!(result, sci!(-10));
     }
 
     #[test]
@@ -1911,14 +1818,6 @@ mod tests {
         let ft = SciDecimal::from(dec!(0.3048));
         let square_ft = ft * ft;
         assert_eq!(square_ft, sci!(0.09290304));
-    }
-
-    #[test]
-    fn mul_with_int() {
-        let n1 = SciDecimal::new(20, 0);
-        let n2 = 30;
-        let result: SciDecimal = n1 * n2;
-        assert_eq!(result, sci!(600));
     }
 
     #[test]
@@ -1964,14 +1863,6 @@ mod tests {
             Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
             dec!(0.129576708774340).round_dp(5)
         );
-    }
-
-    #[test]
-    fn div_with_int() {
-        let n1 = SciDecimal::new(60, 0);
-        let n2 = 30;
-        let result: SciDecimal = n1 / n2;
-        assert_eq!(result, SciDecimal::from(Decimal::TWO));
     }
 
     #[test]
