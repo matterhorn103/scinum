@@ -8,7 +8,7 @@ use crate::SciDecimal;
 /// A trait for numeric types that have an associated uncertainty.
 pub trait SciNum: Num + TryFrom<SciDecimal> {
     /// The type that is returned by accessing the number or uncertainty.
-    type Number: Num;
+    type Number: Num + Into<Self>;
 
     /// Returns the number in exact form without its uncertainty.
     fn number(&self) -> Self::Number;
