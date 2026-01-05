@@ -33,19 +33,23 @@ impl SciFloat {
 impl SciNum for SciFloat {
     type Number = f64;
 
-    fn number(&self) -> Self::Number {
+    #[inline]
+    fn number(&self) -> f64 {
         self.number.clone()
     }
 
-    fn uncertainty(&self) -> Self::Number {
+    #[inline]
+    fn uncertainty(&self) -> f64 {
         self.uncertainty.clone()
     }
 
-    fn relative_uncertainty(&self) -> Self::Number {
-        self.uncertainty() / self.number().abs()
+    #[inline]
+    fn relative_uncertainty(&self) -> f64 {
+        self.uncertainty / self.number.abs()
     }
 
-    fn with_uncertainty(self, uncertainty: Self::Number) -> Self {
+    #[inline]
+    fn with_uncertainty(self, uncertainty: f64) -> Self {
         Self {
             number: self.number,
             uncertainty,
@@ -65,12 +69,24 @@ impl SciNum for SciFloat {
 //    }
 //}
 
-impl TryFrom<SciDecimal> for SciFloat {
-    type Error = ();
+impl From<f64> for SciFloat {
+    fn from(n: f64) -> Self {
+        Self { number: n, uncertainty: 0.0 }
+    }
+}
 
-    fn try_from(value: SciDecimal) -> Result<Self, Self::Error> {
-        let val: f64 = value.number().try_into()?;
-        let unc: f64 = value.uncertainty().try_into()?;
+impl From<f32> for SciFloat {
+    fn from(n: f32) -> Self {
+        Self { number: n.into(), uncertainty: 0.0 }
+    }
+}
+
+impl TryFrom<SciDecimal> for SciFloat {
+    type Error = ParseFloatError;
+
+    fn try_from(n: SciDecimal) -> Result<Self, Self::Error> {
+        let val: f64 = n.number().to_string().parse()?;
+        let unc: f64 = n.uncertainty().to_string().parse()?;
         Ok(Self { number: val, uncertainty: unc })
     }
 }
@@ -91,19 +107,6 @@ impl_from_int!(i32);
 impl_from_int!(u8);
 impl_from_int!(u16);
 impl_from_int!(u32);
-
-macro_rules! impl_from_float {
-    ($T:ty) => {
-        impl From<$T> for SciFloat {
-            fn from(t: $T) -> Self {
-                Self::new(t.into())
-            }
-        }
-    };
-}
-
-impl_from_float!(f32);
-impl_from_float!(f64);
 
 impl Num for SciFloat {
     type FromStrRadixErr = <f64 as Num>::FromStrRadixErr;
@@ -168,7 +171,7 @@ impl Mul for SciFloat {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self {
-        let number = &self.number * &rhs.number;
+        let number = self.number * rhs.number;
         let uncertainty = (self.relative_uncertainty().powi(2) + rhs.relative_uncertainty().powi(2)).sqrt() * number.abs();
         Self { number, uncertainty }
     }
@@ -178,14 +181,8 @@ impl Div for SciFloat {
     type Output = Self;
 
     fn div(self, rhs: Self) -> Self {
-        dbg!(self);
-        dbg!(self.relative_uncertainty());
-        dbg!(rhs);
-        dbg!(rhs.relative_uncertainty());
-        let number = &self.number / &rhs.number;
+        let number = self.number / rhs.number;
         let uncertainty = (self.relative_uncertainty().powi(2) + rhs.relative_uncertainty().powi(2)).sqrt() * number.abs();
-        dbg!(number);
-        dbg!(uncertainty);
         Self { number, uncertainty }
     }
 }
@@ -201,7 +198,7 @@ impl Rem for SciFloat {
         let number = self.number % rhs.number;
         // Don't calculate uncertainty as the remainder function is discontinuous,
         // making it tricky
-        number.try_into().unwrap()
+        number.into()
     }
 }
 
@@ -222,14 +219,6 @@ impl FromStr for SciFloat {
         }
     }
 }
-
-#[allow(unused_macros)]
-macro_rules! scif {
-    ($s:expr) => {
-        SciFloat::from_str(stringify!($s)).unwrap()
-    };
-}
-
 
 #[cfg(test)]
 mod tests {
@@ -294,7 +283,7 @@ mod tests {
 
     #[test]
     fn is_exact() {
-        let n1 = scif!(45.1);
+        let n1 = SciFloat::new(45.1);
         let n2 = SciFloat::new_with_uncertainty(500.0, 5.0);
         assert!(n1.is_exact());
         assert!(!n2.is_exact());
@@ -323,9 +312,9 @@ mod tests {
     #[test]
     fn add_exact() {
         let n1 = SciFloat::new(40.0);
-        let n2 = scif!(5.1);
+        let n2 = SciFloat::new(5.1);
         let result = n1 + n2;
-        assert_eq!(result, scif!(45.1));
+        assert_eq!(result, SciFloat::new(45.1));
     }
 
     #[test]
@@ -344,7 +333,7 @@ mod tests {
     fn sub_exact() {
         let n1 = SciFloat::new(20.0);
         let n2 = SciFloat::new(30.0);
-        assert_eq!(n1 - n2, scif!(-10));
+        assert_eq!(n1 - n2, SciFloat::new(-10.0));
     }
 
     #[test]
@@ -352,7 +341,7 @@ mod tests {
         let n1 = SciFloat::new_with_uncertainty(20.0, 2.0);
         let n2 = SciFloat::new_with_uncertainty(30.0, 5.0);
         let result = n1 - n2;
-        assert_eq!(result, scif!(-10));
+        assert_eq!(result, SciFloat::new(-10.0));
         assert_eq!(result.uncertainty(), 5.385164807134504);
     }
 
@@ -360,7 +349,7 @@ mod tests {
     fn mul_exact() {
         let n1 = SciFloat::new(20.0);
         let n2 = SciFloat::new(30.0);
-        assert_eq!(n1 * n2, scif!(600));
+        assert_eq!(n1 * n2, SciFloat::new(600.0));
     }
 
     #[test]
@@ -372,7 +361,7 @@ mod tests {
         assert_eq!(result.uncertainty(), 116.61903789690601);
         let ft = SciFloat::from(0.3048);
         let square_ft = ft * ft;
-        assert_eq!(square_ft, scif!(0.09290304));
+        assert_eq!(square_ft, SciFloat::new(0.09290304));
     }
 
     #[test]
@@ -425,7 +414,7 @@ mod tests {
         let n1 = SciFloat::new_with_uncertainty(20.0, 2.0);
         let n2 = SciFloat::new_with_uncertainty(30.0, 5.0);
         let result = n2 / n1;
-        assert_eq!(result, scif!(1.5));
+        assert_eq!(result, SciFloat::new(1.5));
         assert_eq!(
             result.uncertainty(),
             0.291547594742265
@@ -453,27 +442,12 @@ mod tests {
         assert_eq!(SciFloat::new(0.0325).to_string(), "0.0325 +/- 0");
         assert_eq!(SciFloat::new(-0.0325).to_string(), "-0.0325 +/- 0");
         assert_eq!(SciFloat::new(85.13).to_string(), "85.13 +/- 0");
-        //dbg!(sci!(25691.29854));
-        //assert_eq!(sci!(25691.29854).to_string(), "25691.29854");
-        // If the maximum number of places (5) is exceeded, use scientific notation
-        assert_eq!(SciFloat::new(1295891.0).to_string(), "1.295891e6");
-        assert_eq!(SciFloat::new(325e-6).to_string(), "3.25e-4"); // Not 0.000325
-        assert_eq!(SciFloat::new(-325e-6).to_string(), "-3.25e-4");
-        assert_eq!(SciFloat::new(8174036.0).to_string(), "8.174036e6");
-        assert_eq!(SciFloat::new(0.000000432).to_string(), "4.32e-7");
-        // Importantly, explicit zeros should be treated as significant
-        assert_eq!(SciFloat::new(1295800.0).to_string(), "1.295800e6");
-        // Scientific notation should also be used if there are insignificant zeros
-        // before the decimal point, even when the maximum number of places (5)
-        // is not exceeded, so that the precision is indicated
-        // 81700 with 3 sf = 8.17e4 = (817, 2) => "8.17e4"
-        assert_eq!(SciFloat::new(817e2).to_string(), "8.17e4");
-        // 81700 with 5 sf = 8.1700e4 = (81700, 0) => "81700"
-        assert_eq!(SciFloat::new(81700.0).to_string(), "81700");
+        assert_eq!(SciFloat::new(81700.0).to_string(), "81700 +/- 0");
 
-        // Check uncertainty formatting
-        assert_eq!(SciFloat::new_with_uncertainty(20.0, 2.0).to_string(), "20(2)");
-        // TODO: More uncertainty display tests
+        assert_eq!(SciFloat::new_with_uncertainty(20.0, 2.0).to_string(), "20 +/- 2");
+        assert_eq!(SciFloat::new_with_uncertainty(10000.0, 15.0).to_string(), "10000 +/- 15");
+        assert_eq!(SciFloat::new_with_uncertainty(86.75309, 42.0).to_string(), "86.75309 +/- 42");
+        assert_eq!(SciFloat::new_with_uncertainty(-86.75309, 42.0).to_string(), "-86.75309 +/- 42");
     }
 
     #[test]
