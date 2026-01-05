@@ -1535,7 +1535,7 @@ impl FromStr for SciDecimal {
     }
 }
 
-#[allow(unused_macros)]
+#[macro_export]
 macro_rules! sci {
     ($s:expr) => {
         SciDecimal::from_str(stringify!($s)).unwrap()

@@ -8,3 +8,4 @@ pub use decimal::SciDecimal;
 pub use float::SciFloat;
 pub use rounding::RoundingMode;
 pub use scinum::SciNum;
+pub use error::SciNumError;
