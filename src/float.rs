@@ -1,7 +1,12 @@
 // SPDX-FileCopyrightText: 2025 Matthew Milner <matterhorn103@proton.me>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-use std::{fmt::Display, num::ParseFloatError, ops::{Add, Div, Mul, Rem, Sub}, str::FromStr};
+use std::{
+    fmt::Display,
+    num::ParseFloatError,
+    ops::{Add, Div, Mul, Rem, Sub},
+    str::FromStr,
+};
 
 use num_traits::{Num, One, Zero};
 
@@ -13,14 +18,19 @@ pub struct SciFloat {
     uncertainty: f64,
 }
 
-
 impl SciFloat {
     pub fn new(number: f64) -> Self {
-        Self { number, uncertainty: 0.0 }
+        Self {
+            number,
+            uncertainty: 0.0,
+        }
     }
 
     pub fn new_with_uncertainty(number: f64, uncertainty: f64) -> Self {
-        Self { number, uncertainty }
+        Self {
+            number,
+            uncertainty,
+        }
     }
 
     /// Returns true if the `SciDecimal` has an uncertainty of zero.
@@ -35,12 +45,12 @@ impl SciNum for SciFloat {
 
     #[inline]
     fn number(&self) -> f64 {
-        self.number.clone()
+        self.number
     }
 
     #[inline]
     fn uncertainty(&self) -> f64 {
-        self.uncertainty.clone()
+        self.uncertainty
     }
 
     #[inline]
@@ -57,27 +67,21 @@ impl SciNum for SciFloat {
     }
 }
 
-//impl TryFrom<f64> for SciFloat {
-//    type Error = ();
-//
-//    fn try_from(value: f64) -> Result<Self, Self::Error> {
-//        if !value.is_normal() {
-//            return Err(());
-//        } else {
-//            Ok(Self { number: value, uncertainty: 0.0 })
-//        }
-//    }
-//}
-
 impl From<f64> for SciFloat {
     fn from(n: f64) -> Self {
-        Self { number: n, uncertainty: 0.0 }
+        Self {
+            number: n,
+            uncertainty: 0.0,
+        }
     }
 }
 
 impl From<f32> for SciFloat {
     fn from(n: f32) -> Self {
-        Self { number: n.into(), uncertainty: 0.0 }
+        Self {
+            number: n.into(),
+            uncertainty: 0.0,
+        }
     }
 }
 
@@ -85,9 +89,12 @@ impl TryFrom<SciDecimal> for SciFloat {
     type Error = ParseFloatError;
 
     fn try_from(n: SciDecimal) -> Result<Self, Self::Error> {
-        let val: f64 = n.number().to_string().parse()?;
-        let unc: f64 = n.uncertainty().to_string().parse()?;
-        Ok(Self { number: val, uncertainty: unc })
+        let number: f64 = n.number().to_string().parse()?;
+        let uncertainty: f64 = n.uncertainty().to_string().parse()?;
+        Ok(Self {
+            number,
+            uncertainty,
+        })
     }
 }
 
@@ -112,13 +119,19 @@ impl Num for SciFloat {
     type FromStrRadixErr = <f64 as Num>::FromStrRadixErr;
 
     fn from_str_radix(str: &str, radix: u32) -> Result<Self, Self::FromStrRadixErr> {
-        Ok(Self { number: f64::from_str_radix(str, radix)?, uncertainty: 0.0 })
+        Ok(Self {
+            number: f64::from_str_radix(str, radix)?,
+            uncertainty: 0.0,
+        })
     }
 }
 
 impl Zero for SciFloat {
     fn zero() -> Self {
-        Self { number: 0.0, uncertainty: 0.0 }
+        Self {
+            number: 0.0,
+            uncertainty: 0.0,
+        }
     }
 
     fn is_zero(&self) -> bool {
@@ -128,7 +141,10 @@ impl Zero for SciFloat {
 
 impl One for SciFloat {
     fn one() -> Self {
-        Self { number: 1.0, uncertainty: 0.0 }
+        Self {
+            number: 1.0,
+            uncertainty: 0.0,
+        }
     }
 }
 
@@ -143,7 +159,7 @@ impl Eq for SciFloat {}
 
 impl PartialOrd for SciFloat {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.number.partial_cmp(&other.number)?)
+        self.number.partial_cmp(&other.number)
     }
 }
 
@@ -153,7 +169,10 @@ impl Add for SciFloat {
     fn add(self, rhs: Self) -> Self {
         let number = self.number + rhs.number;
         let uncertainty = (self.uncertainty.powi(2) + rhs.uncertainty.powi(2)).sqrt();
-        Self { number, uncertainty }
+        Self {
+            number,
+            uncertainty,
+        }
     }
 }
 
@@ -163,7 +182,10 @@ impl Sub for SciFloat {
     fn sub(self, rhs: Self) -> Self {
         let number = self.number - rhs.number;
         let uncertainty = (self.uncertainty.powi(2) + rhs.uncertainty.powi(2)).sqrt();
-        Self { number, uncertainty }
+        Self {
+            number,
+            uncertainty,
+        }
     }
 }
 
@@ -172,8 +194,13 @@ impl Mul for SciFloat {
 
     fn mul(self, rhs: Self) -> Self {
         let number = self.number * rhs.number;
-        let uncertainty = (self.relative_uncertainty().powi(2) + rhs.relative_uncertainty().powi(2)).sqrt() * number.abs();
-        Self { number, uncertainty }
+        let uncertainty =
+            (self.relative_uncertainty().powi(2) + rhs.relative_uncertainty().powi(2)).sqrt()
+                * number.abs();
+        Self {
+            number,
+            uncertainty,
+        }
     }
 }
 
@@ -182,8 +209,13 @@ impl Div for SciFloat {
 
     fn div(self, rhs: Self) -> Self {
         let number = self.number / rhs.number;
-        let uncertainty = (self.relative_uncertainty().powi(2) + rhs.relative_uncertainty().powi(2)).sqrt() * number.abs();
-        Self { number, uncertainty }
+        let uncertainty =
+            (self.relative_uncertainty().powi(2) + rhs.relative_uncertainty().powi(2)).sqrt()
+                * number.abs();
+        Self {
+            number,
+            uncertainty,
+        }
     }
 }
 
@@ -215,7 +247,7 @@ impl FromStr for SciFloat {
         let number: Result<f64, ParseFloatError> = s.parse();
         match number {
             Ok(num) => Ok(SciFloat::new(num)),
-            Err(_) => Err(SciNumError::Parse(s.into()))
+            Err(_) => Err(SciNumError::Parse(s.into())),
         }
     }
 }
@@ -231,14 +263,14 @@ mod tests {
         assert_eq!(n.number(), 30.0);
         assert_eq!(n.uncertainty(), 0.0);
         // Using from
-        let n = SciFloat::try_from(42.0).unwrap();
+        let n = SciFloat::from(42.0);
         assert_eq!(n.number(), 42.0);
         assert_eq!(n.uncertainty(), 0.0);
     }
 
     #[test]
     fn new_from_int_with_uncertainty() {
-        let n = SciFloat::new_with_uncertainty(20.0, 2.0, );
+        let n = SciFloat::new_with_uncertainty(20.0, 2.0);
         assert_eq!(n.number(), 20.0);
         assert_eq!(n.uncertainty(), 2.0);
     }
@@ -303,7 +335,7 @@ mod tests {
         assert_ne!(SciFloat::new(3.0), SciFloat::new(-3.0));
         // Same value but different precision
         assert_eq!(SciFloat::new(200e3), SciFloat::new(2e5));
-        
+
         // How is this different than the previous one?
         // Same value but different precision, small numbers
         //assert_eq!(SciFloat::new(200, 3), SciFloat::new(2, 5));
@@ -353,7 +385,7 @@ mod tests {
     }
 
     #[test]
-    fn mul_with_uncertainty() {    
+    fn mul_with_uncertainty() {
         let n1 = SciFloat::new_with_uncertainty(20.0, 2.0);
         let n2 = SciFloat::new_with_uncertainty(30.0, 5.0);
         let result = n1 * n2;
@@ -384,7 +416,7 @@ mod tests {
         // Recurring results
         assert_eq!(
             (SciFloat::new(1.0) / SciFloat::new(3.0)),
-            SciFloat::new(3333333333333333333e-19),
+            SciFloat::new(3333333333333333e-19),
         );
         // Fails as result is currently truncated rather than rounded
         //assert_eq!(
@@ -399,14 +431,8 @@ mod tests {
         let n2 = SciFloat::new_with_uncertainty(30.0, 5.0);
         let result = n1 / n2;
         dbg!(result);
-        assert_eq!(
-            result.number(),
-            0.6666666666666666
-        );
-        assert_eq!(
-            result.uncertainty(),
-            0.129576708774340
-        );
+        assert_eq!(result.number(), 0.6666666666666666);
+        assert_eq!(result.uncertainty(), 0.129576708774340);
     }
 
     #[test]
@@ -415,10 +441,7 @@ mod tests {
         let n2 = SciFloat::new_with_uncertainty(30.0, 5.0);
         let result = n2 / n1;
         assert_eq!(result, SciFloat::new(1.5));
-        assert_eq!(
-            result.uncertainty(),
-            0.291547594742265
-        );
+        assert_eq!(result.uncertainty(), 0.291547594742265);
     }
 
     #[test]
@@ -444,10 +467,22 @@ mod tests {
         assert_eq!(SciFloat::new(85.13).to_string(), "85.13 +/- 0");
         assert_eq!(SciFloat::new(81700.0).to_string(), "81700 +/- 0");
 
-        assert_eq!(SciFloat::new_with_uncertainty(20.0, 2.0).to_string(), "20 +/- 2");
-        assert_eq!(SciFloat::new_with_uncertainty(10000.0, 15.0).to_string(), "10000 +/- 15");
-        assert_eq!(SciFloat::new_with_uncertainty(86.75309, 42.0).to_string(), "86.75309 +/- 42");
-        assert_eq!(SciFloat::new_with_uncertainty(-86.75309, 42.0).to_string(), "-86.75309 +/- 42");
+        assert_eq!(
+            SciFloat::new_with_uncertainty(20.0, 2.0).to_string(),
+            "20 +/- 2"
+        );
+        assert_eq!(
+            SciFloat::new_with_uncertainty(10000.0, 15.0).to_string(),
+            "10000 +/- 15"
+        );
+        assert_eq!(
+            SciFloat::new_with_uncertainty(86.75309, 42.0).to_string(),
+            "86.75309 +/- 42"
+        );
+        assert_eq!(
+            SciFloat::new_with_uncertainty(-86.75309, 42.0).to_string(),
+            "-86.75309 +/- 42"
+        );
     }
 
     #[test]
@@ -465,7 +500,10 @@ mod tests {
         // Scientific notation with negative exponent
         assert_eq!(SciFloat::from_str("2e-5").unwrap(), SciFloat::new(2e-5));
         // Negative number with positive exponent
-        assert_eq!(SciFloat::from_str("-6.022e6").unwrap(), SciFloat::new(-6022e3));
+        assert_eq!(
+            SciFloat::from_str("-6.022e6").unwrap(),
+            SciFloat::new(-6022e3)
+        );
         // Large exponents
         assert_eq!(SciFloat::from_str("1.5e18").unwrap(), SciFloat::new(15e17));
         assert_eq!(
@@ -475,10 +513,16 @@ mod tests {
         // Capital E for exponent
         assert_eq!(SciFloat::from_str("1.5E8").unwrap(), SciFloat::new(15e7));
         // 16 significant figures must always be fine
-        assert_eq!(SciFloat::from_str("0.5293040185492948").unwrap(), SciFloat::new(5293040185492948e-16));
+        assert_eq!(
+            SciFloat::from_str("0.5293040185492948").unwrap(),
+            SciFloat::new(5293040185492948e-16)
+        );
         // Excess precision should be silently truncated to 16 sf
         // TODO: maybe in future should be rounded rather than truncated?
-        assert_eq!(SciFloat::from_str("0.529304018549294841").unwrap(), SciFloat::new(5293040185492948e-16));
+        assert_eq!(
+            SciFloat::from_str("0.529304018549294841").unwrap(),
+            SciFloat::new(5293040185492948e-16)
+        );
         // Make sure incorrectly formatted strings fail
         assert!(SciFloat::from_str("not a number").is_err());
         assert!(SciFloat::from_str("x.482").is_err());
