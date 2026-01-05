@@ -22,7 +22,7 @@ pub trait SciNum: Num + TryFrom<SciDecimal> {
     ///
     /// The relative uncertainty is always positive.
     fn relative_uncertainty(&self) -> Self::Number {
-        self.number() / self.uncertainty()
+        self.uncertainty() / self.number()
     }
 
     /// Creates a new number with the same value but the provided uncertainty.
