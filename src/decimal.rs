@@ -1944,11 +1944,10 @@ mod tests {
             (SciDecimal::new(1, 0) / SciDecimal::new(3, 0)),
             SciDecimal::new(3333333333333333333, -19),
         );
-        // Fails as result is currently truncated rather than rounded
-        //assert_eq!(
-        //    (SciDecimal::new(1, 0) / SciDecimal::new(9, 0)),
-        //    SciDecimal::new(1111111111111111112, -19),
-        //);
+        assert_eq!(
+            (SciDecimal::new(1, 0) / SciDecimal::new(9, 0)),
+            SciDecimal::new(1111111111111111111, -19),
+        );
     }
 
     #[test]

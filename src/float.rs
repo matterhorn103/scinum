@@ -416,13 +416,12 @@ mod tests {
         // Recurring results
         assert_eq!(
             (SciFloat::new(1.0) / SciFloat::new(3.0)),
-            SciFloat::new(3333333333333333e-19),
+            SciFloat::new(3333333333333333e-16),
         );
-        // Fails as result is currently truncated rather than rounded
-        //assert_eq!(
-        //    (SciFloat::new(1, 0) / SciFloat::new(9, 0)),
-        //    SciFloat::new(1111111111111111112, -19),
-        //);
+        assert_eq!(
+            (SciFloat::new(1.0) / SciFloat::new(9.0)),
+            SciFloat::new(1111111111111111e-16),
+        );
     }
 
     #[test]
@@ -515,12 +514,6 @@ mod tests {
         // 16 significant figures must always be fine
         assert_eq!(
             SciFloat::from_str("0.5293040185492948").unwrap(),
-            SciFloat::new(5293040185492948e-16)
-        );
-        // Excess precision should be silently truncated to 16 sf
-        // TODO: maybe in future should be rounded rather than truncated?
-        assert_eq!(
-            SciFloat::from_str("0.529304018549294841").unwrap(),
             SciFloat::new(5293040185492948e-16)
         );
         // Make sure incorrectly formatted strings fail
