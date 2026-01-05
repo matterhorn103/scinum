@@ -133,6 +133,46 @@ pub struct SciDecimal {
 const MIN_NUMBER: i128 = -0xFFFFFFFFFFFFFFFF;
 const MAX_NUMBER: i128 = 0xFFFFFFFFFFFFFFFF;
 
+impl TryFrom<f64> for SciDecimal {
+    type Error = ();
+
+    fn try_from(value: f64) -> Result<Self, Self::Error> {
+        if !value.is_normal() {
+            return Err(());
+        }
+
+        if value.fract() == 0.0 {
+            return Ok(SciDecimal::new(value as i128, 0))
+        } else {
+            let mut val = value;
+            let eps = 1e-4;
+            let mut exponent: i16 = 0;
+            while (val.round() - val).abs() > eps {
+                val = 10.0 * val;
+                exponent += 1;
+            }
+            Ok(SciDecimal::new(val.round() as i128, exponent))
+        }
+    }
+}
+
+impl TryFrom<SciDecimal> for f64 {
+    type Error = ();
+
+    fn try_from(value: SciDecimal) -> Result<Self, Self::Error> {
+        if !value.is_exact() {
+            return Err(());
+        }
+        let mut significand = value.significand as f64;
+        if value.negative {
+            significand *= -1.0
+        }
+
+        Ok(significand * (10.0_f64).powi(value.exponent() as i32))
+
+    }
+}
+
 impl SciNum for SciDecimal {
     type Number = SciDecimal;
 
