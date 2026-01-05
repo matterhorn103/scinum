@@ -494,7 +494,7 @@ mod tests {
         // Decimal without integral part before decimal point
         assert_eq!(SciFloat::from_str(".0859").unwrap(), SciFloat::new(859e-4));
         // Negative decimal
-        assert_eq!(SciFloat::from_str("-3.14").unwrap(), SciFloat::new(-314e-2));
+        assert_eq!(SciFloat::from_str("-3.12").unwrap(), SciFloat::new(-312e-2));
         // Scientific notation
         assert_eq!(SciFloat::from_str("1.5e8").unwrap(), SciFloat::new(15e7));
         // Scientific notation with negative exponent
