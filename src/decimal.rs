@@ -17,7 +17,7 @@ use crate::{SciNum, error::SciNumError};
 
 /// A 16-bit signed exponent represented as a 16-bit unsigned integer by using a bias.
 ///
-/// b = 2<sup>15</sup> = 32768
+/// The bias is _b_ = 2<sup>15</sup> = 32768
 ///
 /// For the value of the bias, we deviate from the usual IEEE way of doing
 /// things ever so slightly and use 2<sup>15</sup>rather than 2<sup>15</sup> - 1.
@@ -133,8 +133,39 @@ pub struct SciDecimal {
     significand: u64,
 }
 
-const MIN_NUMBER: i128 = -0xFFFFFFFFFFFFFFFF;
-const MAX_NUMBER: i128 = 0xFFFFFFFFFFFFFFFF;
+impl SciDecimal {
+    /// The maximum supported (unsigned) significand.
+    /// 
+    /// `SciDecimal` supports up to 16 decimal digits, matching the precision of the
+    /// IEEE 754 `decimal64` interchange format.
+    /// 
+    /// This is slightly larger than the range of `f64` significands.
+    pub const MAX_SIGNIFICAND: u64 = 10_u64.pow(16) - 1;
+
+    /// The minimum supported signed significand.
+    const MIN_SIGNIFICAND_SIGNED: i64 = -(Self::MAX_SIGNIFICAND as i64);
+
+    /// The maximum supported signed significand.
+    const MAX_SIGNIFICAND_SIGNED: i64 = Self::MAX_SIGNIFICAND as i64;
+
+    /// The highest supported number.
+    pub const MAX: SciDecimal = SciDecimal {
+        negative: false,
+        exponent: BiasedExponent::MAX,
+        uncertainty_scale: 0,
+        uncertainty: 0,
+        significand: u64::MAX,
+    };
+
+    /// The lowest supported number.
+    pub const MIN: SciDecimal = SciDecimal {
+        negative: true,
+        exponent: BiasedExponent::ZERO,
+        uncertainty_scale: 0,
+        uncertainty: 0,
+        significand: u64::MAX,
+    };
+}
 
 impl SciNum for SciDecimal {
     type Number = SciDecimal;
@@ -234,8 +265,8 @@ impl SciDecimal {
     ///
     /// # Panics
     ///
-    /// This function panics if the unsigned value of the number is larger than
-    /// `u64::MAX` i.e. outside of the range −(2<sup>64</sup>) to 2<sup>64</sup>.
+    /// This function panics if the number has more than 16 significant figures
+    /// (i.e. is larger than `MAX_SIGNIFICAND` = 2<sup>16</sup>)
     ///
     /// # Example
     ///
@@ -245,8 +276,8 @@ impl SciDecimal {
     /// let n = SciDecimal::new(251, -3);
     /// assert_eq!(n.to_string(), "0.251");
     /// ```
-    pub fn new(number: i128, exponent: i16) -> Self {
-        if !(MIN_NUMBER..=MAX_NUMBER).contains(&number) {
+    pub fn new(number: i64, exponent: i16) -> Self {
+        if !(Self::MIN_SIGNIFICAND_SIGNED..=Self::MAX_SIGNIFICAND_SIGNED).contains(&number) {
             panic!("{number} has too many significant figures for a significand!")
         }
         Self {
@@ -266,8 +297,8 @@ impl SciDecimal {
     ///
     /// # Panics
     ///
-    /// This function panics if the unsigned value of the number is larger than
-    /// `u64::MAX` i.e. outside of the range −(2<sup>64</sup>) to 2<sup>64</sup>.
+    /// This function panics if the number has more than 16 significant figures
+    /// (i.e. is larger than `MAX_SIGNIFICAND` = 2<sup>16</sup>)
     ///
     /// # Example
     ///
@@ -277,8 +308,8 @@ impl SciDecimal {
     /// let n = SciDecimal::new_with_uncertainty(251, 3, -3);
     /// assert_eq!(n.to_string(), "0.251(3)");
     /// ```
-    pub fn new_with_uncertainty(number: i128, uncertainty: u32, exponent: i16) -> Self {
-        if !(MIN_NUMBER..=MAX_NUMBER).contains(&number) {
+    pub fn new_with_uncertainty(number: i64, uncertainty: u32, exponent: i16) -> Self {
+        if !(Self::MIN_SIGNIFICAND_SIGNED..=Self::MAX_SIGNIFICAND_SIGNED).contains(&number) {
             panic!("{number} has too many significant figures for a significand!")
         }
         Self {
@@ -308,7 +339,8 @@ impl SciDecimal {
     ///
     /// # Panics
     ///
-    /// This function panics if the overall significand does not fit into `u64`.
+    /// This function panics if the overall significand has more than 16 significant
+    /// figures.
     ///
     /// # Example
     ///
@@ -349,6 +381,9 @@ impl SciDecimal {
                 (unsigned_integer, exponent)
             }
         };
+        if significand > Self::MAX_SIGNIFICAND {
+            panic!("{significand} has too many significant figures for a significand!")
+        }
         Self {
             uncertainty,
             uncertainty_scale: 0,
@@ -396,11 +431,11 @@ impl SciDecimal {
     ///
     /// Corresponds to representation of the number as `mmmmm × 10^nn`.
     #[inline]
-    pub fn significand_signed(&self) -> i128 {
+    pub fn significand_signed(&self) -> i64 {
         if self.negative {
-            -(self.significand as i128)
+            -(self.significand as i64)
         } else {
-            self.significand as i128
+            self.significand as i64
         }
     }
 
@@ -970,14 +1005,14 @@ impl From<Decimal> for SciDecimal {
     /// `Decimal.round_sf()`; the rounding thus follows the
     /// `rust_decimal::RoundingStrategy::MidpointNearestEven` strategy.
     fn from(n: Decimal) -> Self {
-        let n = if n.unpack().hi == 0 {
+        let n = if n.mantissa() < SciDecimal::MAX_SIGNIFICAND_SIGNED.into() {
             n
         } else {
             n.round_sf(16).unwrap()
         };
-        // `n.hi` should now always be 0 and the significand should fit into a `u64`
+        // The significand should now fit into a `u64`
         // `n.scale()` is max 28 anyway, should be max 18 at this point
-        Self::new(n.mantissa(), -(n.scale() as i16))
+        Self::new(n.mantissa() as i64, -(n.scale() as i16))
     }
 }
 
@@ -993,7 +1028,7 @@ impl TryFrom<SciDecimal> for Decimal {
             Err(rust_decimal::Error::ConversionTo("Decimal".to_string()))
         } else {
             Decimal::try_from_i128_with_scale(
-                n.significand_signed(),
+                n.significand_signed().into(),
                 (BiasedExponent::EXPONENT_BIAS - n.exponent.0).into(),
             )
         }
@@ -1016,7 +1051,7 @@ impl From<SciDecimal> for BigDecimal {
     /// Converts a `SciDecimal` into a `bigdecimal::BigDecimal`, dropping any uncertainty.
     fn from(n: SciDecimal) -> Self {
         BigDecimal::from_bigint(
-            BigInt::from_i128(n.significand_signed()).unwrap(),
+            BigInt::from_i64(n.significand_signed()).unwrap(),
             -(n.exponent()) as i64,
         )
     }
@@ -1035,11 +1070,9 @@ macro_rules! impl_from_int {
 impl_from_int!(i8);
 impl_from_int!(i16);
 impl_from_int!(i32);
-impl_from_int!(i64);
 impl_from_int!(u8);
 impl_from_int!(u16);
 impl_from_int!(u32);
-impl_from_int!(u64);
 
 impl PartialEq for SciDecimal {
     fn eq(&self, other: &Self) -> bool {
@@ -1493,26 +1526,6 @@ macro_rules! sci {
     };
 }
 
-impl SciDecimal {
-    /// The highest supported number.
-    pub const MAX: SciDecimal = SciDecimal {
-        negative: false,
-        exponent: BiasedExponent::MAX,
-        uncertainty_scale: 0,
-        uncertainty: 0,
-        significand: u64::MAX,
-    };
-
-    /// The lowest supported number.
-    pub const MIN: SciDecimal = SciDecimal {
-        negative: true,
-        exponent: BiasedExponent::ZERO,
-        uncertainty_scale: 0,
-        uncertainty: 0,
-        significand: u64::MAX,
-    };
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1588,18 +1601,18 @@ mod tests {
 
     #[test]
     fn new_largest_significand() {
-        let _n = SciDecimal::new(u64::MAX.into(), 0);
+        let _n = SciDecimal::new(SciDecimal::MAX_SIGNIFICAND_SIGNED, 0);
     }
 
     #[test]
     fn new_largest_negative_significand() {
-        let _n = SciDecimal::new(-i128::from(u64::MAX), 0);
+        let _n = SciDecimal::new(SciDecimal::MIN_SIGNIFICAND_SIGNED, 0);
     }
 
     #[test]
     #[should_panic]
     fn new_invalid_significand() {
-        let _n = SciDecimal::new(i128::from(u64::MAX) + 1, 0);
+        let _n = SciDecimal::new(SciDecimal::MAX_SIGNIFICAND_SIGNED + 1, 0);
     }
 
     #[test]
