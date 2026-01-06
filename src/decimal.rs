@@ -984,6 +984,18 @@ impl TryFrom<SciDecimal> for Decimal {
     }
 }
 
+impl From<BigDecimal> for SciDecimal {
+    /// Converts a `bigdecimal::BigDecimal` to a `SciDecimal`.
+    /// 
+    /// The conversion currently goes via the string representation.
+    ///
+    /// A silent loss of precision will occur if the `BigDecimal` has a significand
+    /// with more than 16 significant figures.
+    fn from(n: BigDecimal) -> Self {
+        n.to_scientific_notation().parse().unwrap()
+    }
+}
+
 impl From<SciDecimal> for BigDecimal {
     /// Converts a `SciDecimal` into a `bigdecimal::BigDecimal`, dropping any uncertainty.
     fn from(n: SciDecimal) -> Self {
