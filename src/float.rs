@@ -8,7 +8,7 @@ use std::{
     str::FromStr,
 };
 
-use num_traits::{Num, One, Zero};
+use num_traits::{Inv, Num, One, Zero};
 
 use crate::{SciDecimal, SciNum, error::SciNumError};
 
@@ -65,6 +65,10 @@ impl SciNum for SciFloat {
             uncertainty,
         }
     }
+    
+    const ZERO: Self =  SciFloat { number: 0.0, uncertainty: 0.0 };
+    
+    const ONE: Self =  SciFloat { number: 1.0, uncertainty: 0.0 };
 }
 
 impl From<f64> for SciFloat {
@@ -231,6 +235,14 @@ impl Rem for SciFloat {
         // Don't calculate uncertainty as the remainder function is discontinuous,
         // making it tricky
         number.into()
+    }
+}
+
+impl Inv for SciFloat {
+    type Output = Self;
+
+    fn inv(self) -> Self {
+        Self::one() / self
     }
 }
 

@@ -139,6 +139,22 @@ const MAX_NUMBER: i128 = 0xFFFFFFFFFFFFFFFF;
 impl SciNum for SciDecimal {
     type Number = SciDecimal;
 
+    const ZERO: SciDecimal = SciDecimal {
+        negative: false,
+        exponent: BiasedExponent::ZERO,
+        uncertainty_scale: 0,
+        uncertainty: 0,
+        significand: 0,
+    };
+
+    const ONE: SciDecimal = SciDecimal {
+        negative: false,
+        exponent: BiasedExponent::ZERO,
+        uncertainty_scale: 0,
+        uncertainty: 0,
+        significand: 1,
+    };
+
     /// Returns the number as an exact `SciDecimal` without its uncertainty.
     #[inline]
     fn number(&self) -> Self {
@@ -1478,24 +1494,6 @@ macro_rules! sci {
 }
 
 impl SciDecimal {
-    /// A constant representing 0.
-    pub const ZERO: SciDecimal = SciDecimal {
-        negative: false,
-        exponent: BiasedExponent::ZERO,
-        uncertainty_scale: 0,
-        uncertainty: 0,
-        significand: 0,
-    };
-
-    /// A constant representing 1.
-    pub const ONE: SciDecimal = SciDecimal {
-        negative: false,
-        exponent: BiasedExponent::ZERO,
-        uncertainty_scale: 0,
-        uncertainty: 0,
-        significand: 1,
-    };
-
     /// The highest supported number.
     pub const MAX: SciDecimal = SciDecimal {
         negative: false,
