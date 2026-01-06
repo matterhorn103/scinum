@@ -133,6 +133,7 @@ pub struct SciDecimal {
     significand: u64,
 }
 
+// Constants that don't belong to specific traits
 impl SciDecimal {
     /// The maximum supported (unsigned) significand.
     /// 
@@ -167,98 +168,28 @@ impl SciDecimal {
     };
 }
 
-impl SciNum for SciDecimal {
-    type Number = SciDecimal;
-
-    const ZERO: SciDecimal = SciDecimal {
-        negative: false,
-        exponent: BiasedExponent::ZERO,
-        uncertainty_scale: 0,
-        uncertainty: 0,
-        significand: 0,
-    };
-
-    const ONE: SciDecimal = SciDecimal {
-        negative: false,
-        exponent: BiasedExponent::ZERO,
-        uncertainty_scale: 0,
-        uncertainty: 0,
-        significand: 1,
-    };
-
-    /// Returns the number as an exact `SciDecimal` without its uncertainty.
+impl Zero for SciDecimal {
     #[inline]
-    fn number(&self) -> Self {
-        Self {
-            uncertainty: 0,
-            uncertainty_scale: 0,
-            ..*self
-        }
+    fn zero() -> Self {
+        Self::ZERO
     }
 
-    /// Returns the absolute uncertainty as an exact `SciDecimal`.
-    ///
-    /// The uncertainty is always positive.
-    #[inline]
-    fn uncertainty(&self) -> Self {
-        Self {
-            uncertainty: 0,
-            uncertainty_scale: 0,
-            negative: false,
-            exponent: (self.exponent.unbias() + self.uncertainty_scale as i16).into(),
-            significand: self.uncertainty.into(),
-        }
-    }
-
-    /// Returns the relative uncertainty as an exact `SciDecimal`.
-    ///
-    /// The relative uncertainty is always positive.
-    #[inline]
-    fn relative_uncertainty(&self) -> Self {
-        self.uncertainty() / self.number().abs()
-    }
-
-    /// Creates a new `SciDecimal` with the same number but the provided
+    /// Returns true if the `SciDecimal` is equal to zero, regardless of any
     /// uncertainty.
-    ///
-    /// If the uncertainty has a significand greater than `u32::MAX` (i.e. more
-    /// than ~9 significant figures), it is first truncated to 9 s.f.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use scinum::SciDecimal;
-    /// #
-    /// let n = SciDecimal::new(251, -3).with_uncertainty(SciDecimal::new(3, -3));
-    /// assert_eq!(n.to_string(), "0.251(3)");
-    /// assert_eq!(n, SciDecimal::new_with_uncertainty(251, 3, -3));
     #[inline]
-    fn with_uncertainty(mut self, uncertainty: Self) -> Self {
-        let narrowed_uncertainty = if uncertainty.significand > u32::MAX.into() {
-            uncertainty.truncate(9);
-            uncertainty
-        } else {
-            uncertainty
-        };
-        self.uncertainty_scale = (narrowed_uncertainty.exponent.unbias() - self.exponent.unbias())
-            .try_into()
-            .expect(
-                "Difference in precision of number and uncertainty should never be this large!",
-            );
-        self.uncertainty = narrowed_uncertainty
-            .significand
-            .try_into()
-            .expect("Already made sure that this is not greater than `u32::MAX`");
-        self
-    }
-
-    /// Returns true if the `SciDecimal` has an uncertainty of zero.
-    #[inline]
-    fn is_exact(&self) -> bool {
-        self.uncertainty == 0
+    fn is_zero(&self) -> bool {
+        self.significand == 0
     }
 }
 
+impl One for SciDecimal {
+    #[inline]
+    fn one() -> Self {
+        Self::ONE
+    }
+}
+
+// Instantiation
 impl SciDecimal {
     /// Creates an exact `SciDecimal` from parts corresponding to _m_ ×
     /// 10<sup><i>n</i></sup>.
@@ -392,7 +323,10 @@ impl SciDecimal {
             significand,
         }
     }
+}
 
+// Methods for obtaining parts of the contained data
+impl SciDecimal {
     /// Returns the integer part, number of fractional leading zeros,
     /// fractional part, uncertainty, and exponent of the number when represented
     /// with normalized notation i.e. with 10 > _m_ >= 1.
@@ -468,154 +402,6 @@ impl SciDecimal {
     pub fn exponent_normalized(&self) -> i16 {
         todo!()
     }
-
-    /// Returns true if the sign bit is negative.
-    /// Zero is considered positive.
-    #[inline(always)]
-    //#[must_use]
-    pub const fn is_sign_negative(&self) -> bool {
-        self.negative
-    }
-
-    /// Returns true if the sign bit is positive.
-    /// Zero is also considered positive.
-    #[inline(always)]
-    //#[must_use]
-    pub const fn is_sign_positive(&self) -> bool {
-        !self.negative
-    }
-
-    /// Creates an exact `SciDecimal` from a float.
-    ///
-    /// Currently this goes via the string representation.
-    pub fn from_f64(n: f64) -> Option<Self> {
-        n.to_string().parse().ok()
-    }
-
-    //pub fn add_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    //where
-    //    T: Into<Decimal>,
-    //{
-    //    let number = Decimal::try_from(self.number()).unwrap() + Decimal::try_from(rhs.number()).unwrap();
-    //    if self.is_exact() && rhs.is_exact() {
-    //        Self::from(number)
-    //    } else {
-    //        let sigma_ab = correlation.into()
-    //            * Decimal::try_from(self.uncertainty()).unwrap()
-    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
-    //        let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
-    //            + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2))
-    //            + (Decimal::TWO * sigma_ab))
-    //            .sqrt()
-    //            .unwrap();
-    //        Self::from(number).with_uncertainty(uncertainty.into())
-    //    }
-    //}
-
-    //pub fn sub_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    //where
-    //    T: Into<Decimal>,
-    //{
-    //    let number = Decimal::try_from(self.number()).unwrap() - Decimal::try_from(rhs.number()).unwrap();
-    //    if self.is_exact() && rhs.is_exact() {
-    //        Self::from(number)
-    //    } else {
-    //        let sigma_ab = correlation.into()
-    //            * Decimal::try_from(self.uncertainty()).unwrap()
-    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
-    //        let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
-    //            + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2))
-    //            - (Decimal::TWO * sigma_ab))
-    //            .sqrt()
-    //            .unwrap();
-    //        Self::from(number).with_uncertainty(uncertainty.into())
-    //    }
-    //}
-
-    //pub fn mul_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    //where
-    //    T: Into<Decimal>,
-    //{
-    //    let number = Decimal::try_from(self.number()).unwrap() * Decimal::try_from(rhs.number()).unwrap();
-    //    if self.is_exact() && rhs.is_exact() {
-    //        Self::from(number)
-    //    } else {
-    //        let sigma_ab = correlation.into()
-    //            * Decimal::try_from(self.uncertainty()).unwrap()
-    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
-    //        let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap().powu(2))
-    //            + (Decimal::try_from(rhs.relative_uncertainty()).unwrap().powu(2))
-    //            + (Decimal::TWO * sigma_ab / number))
-    //            .sqrt()
-    //            .unwrap()
-    //            * number.abs();
-    //        Self::from(number).with_uncertainty(uncertainty.into())
-    //    }
-    //}
-
-    //pub fn div_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    //where
-    //    T: Into<Decimal>,
-    //{
-    //    let number = Decimal::try_from(self.number()).unwrap() / Decimal::try_from(rhs.number()).unwrap();
-    //    if self.is_exact() && rhs.is_exact() {
-    //       Self::from(number)
-    //    } else {
-    //        let sigma_ab = correlation.into()
-    //            * Decimal::try_from(self.uncertainty()).unwrap()
-    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
-    //        let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap().powu(2))
-    //            + (Decimal::try_from(rhs.relative_uncertainty()).unwrap().powu(2))
-    //            - (Decimal::TWO * sigma_ab / number))
-    //            .sqrt()
-    //            .unwrap()
-    //            * number.abs();
-    //        Self::from(number).with_uncertainty(uncertainty.into())
-    //    }
-    //}
-
-    //#[inline]
-    //pub fn powd(self, rhs: Decimal) -> Self {
-    //    self.pow_with_correlation(rhs.into(), Decimal::ZERO)
-    //}
-
-    //#[inline]
-    //pub fn powfloat(self, rhs: f64) -> Self {
-    //    let rhs = Self::from_f64(rhs).unwrap();
-    //    self.pow_with_correlation(rhs, Decimal::ZERO)
-    //}
-
-    //#[inline]
-    //pub fn powfrac(self, rhs: Frac) -> Self {
-    //    let n: Decimal = (*rhs.numer()).into();
-    //    let d: Decimal = (*rhs.denom()).into();
-    //    let rhs = n / d;
-    //    self.powd(rhs)
-    //}
-
-    //pub fn pow_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    //where
-    //    T: Into<Decimal>,
-    //{
-    //    let number = Decimal::try_from(self.number()).unwrap().powd(Decimal::try_from(rhs.number()).unwrap());
-    //    if self.is_exact() && rhs.is_exact() {
-    //        Self::from(number)
-    //    } else {
-    //        let sigma_ab = correlation.into()
-    //            * Decimal::try_from(self.uncertainty()).unwrap()
-    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
-    //        let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap() * Decimal::try_from(rhs.number()).unwrap()).powu(2)
-    //            + (Decimal::try_from(self.number()).unwrap().ln() * Decimal::try_from(rhs.uncertainty()).unwrap()).powu(2)
-    //            + (Decimal::TWO
-    //                * ((Decimal::try_from(self.number()).unwrap().ln() * Decimal::try_from(rhs.number()).unwrap())
-    //                    / Decimal::try_from(self.number()).unwrap())
-    //                * sigma_ab))
-    //            .sqrt()
-    //            .unwrap()
-    //            * number.abs();
-    //        Self::from(number).with_uncertainty(uncertainty.into())
-    //    }
-    //}
 }
 
 // Precision, figures, and rounding
@@ -727,6 +513,98 @@ impl SciDecimal {
     }
 }
 
+impl SciNum for SciDecimal {
+    type Number = SciDecimal;
+
+    const ZERO: SciDecimal = SciDecimal {
+        negative: false,
+        exponent: BiasedExponent::ZERO,
+        uncertainty_scale: 0,
+        uncertainty: 0,
+        significand: 0,
+    };
+
+    const ONE: SciDecimal = SciDecimal {
+        negative: false,
+        exponent: BiasedExponent::ZERO,
+        uncertainty_scale: 0,
+        uncertainty: 0,
+        significand: 1,
+    };
+
+    /// Returns the number as an exact `SciDecimal` without its uncertainty.
+    #[inline]
+    fn number(&self) -> Self {
+        Self {
+            uncertainty: 0,
+            uncertainty_scale: 0,
+            ..*self
+        }
+    }
+
+    /// Returns the absolute uncertainty as an exact `SciDecimal`.
+    ///
+    /// The uncertainty is always positive.
+    #[inline]
+    fn uncertainty(&self) -> Self {
+        Self {
+            uncertainty: 0,
+            uncertainty_scale: 0,
+            negative: false,
+            exponent: (self.exponent.unbias() + self.uncertainty_scale as i16).into(),
+            significand: self.uncertainty.into(),
+        }
+    }
+
+    /// Returns the relative uncertainty as an exact `SciDecimal`.
+    ///
+    /// The relative uncertainty is always positive.
+    #[inline]
+    fn relative_uncertainty(&self) -> Self {
+        self.uncertainty() / self.number().abs()
+    }
+
+    /// Creates a new `SciDecimal` with the same number but the provided
+    /// uncertainty.
+    ///
+    /// If the uncertainty has a significand greater than `u32::MAX` (i.e. more
+    /// than ~9 significant figures), it is first truncated to 9 s.f.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scinum::SciDecimal;
+    /// #
+    /// let n = SciDecimal::new(251, -3).with_uncertainty(SciDecimal::new(3, -3));
+    /// assert_eq!(n.to_string(), "0.251(3)");
+    /// assert_eq!(n, SciDecimal::new_with_uncertainty(251, 3, -3));
+    #[inline]
+    fn with_uncertainty(mut self, uncertainty: Self) -> Self {
+        let narrowed_uncertainty = if uncertainty.significand > u32::MAX.into() {
+            uncertainty.truncate(9);
+            uncertainty
+        } else {
+            uncertainty
+        };
+        self.uncertainty_scale = (narrowed_uncertainty.exponent.unbias() - self.exponent.unbias())
+            .try_into()
+            .expect(
+                "Difference in precision of number and uncertainty should never be this large!",
+            );
+        self.uncertainty = narrowed_uncertainty
+            .significand
+            .try_into()
+            .expect("Already made sure that this is not greater than `u32::MAX`");
+        self
+    }
+
+    /// Returns true if the `SciDecimal` has an uncertainty of zero.
+    #[inline]
+    fn is_exact(&self) -> bool {
+        self.uncertainty == 0
+    }
+}
+
 impl Num for SciDecimal {
     type FromStrRadixErr = rust_decimal::Error;
 
@@ -737,29 +615,8 @@ impl Num for SciDecimal {
     }
 }
 
-impl Zero for SciDecimal {
-    #[inline]
-    fn zero() -> Self {
-        Self::ZERO
-    }
-
-    /// Returns true if the `SciDecimal` is equal to zero, regardless of any
-    /// uncertainty.
-    #[inline]
-    fn is_zero(&self) -> bool {
-        self.significand == 0
-    }
-}
-
-impl One for SciDecimal {
-    #[inline]
-    fn one() -> Self {
-        Self::ONE
-    }
-}
-
-// Methods that will belong to the Real trait if we implement it properly later
-// impl Real for SciDecimal {
+// Methods that will belong to the Float trait if we implement it properly later
+// impl Float for SciDecimal {
 impl SciDecimal {
     //fn min_value() -> Self {
     //    todo!()
@@ -808,13 +665,21 @@ impl SciDecimal {
     //    todo!()
     //}
 
-    //fn is_sign_positive(self) -> bool {
-    //    todo!()
-    //}
+    /// Returns true if the sign bit is negative.
+    /// Zero is considered positive.
+    #[inline(always)]
+    //#[must_use]
+    const fn is_sign_negative(&self) -> bool {
+        self.negative
+    }
 
-    //fn is_sign_negative(self) -> bool {
-    //    todo!()
-    //}
+    /// Returns true if the sign bit is positive.
+    /// Zero is also considered positive.
+    #[inline(always)]
+    //#[must_use]
+    const fn is_sign_positive(&self) -> bool {
+        !self.negative
+    }
 
     //fn mul_add(self, a: Self, b: Self) -> Self {
     //    todo!()
@@ -996,84 +861,6 @@ impl SciDecimal {
     //}
 }
 
-impl From<Decimal> for SciDecimal {
-    /// Converts a `rust_decimal::Decimal` to a `SciDecimal`.
-    ///
-    /// A silent loss of precision will occur if the `Decimal` has a significand
-    /// wider than 64 bits.
-    /// If this is the case, `n` is first rounded to 16 significant figures using
-    /// `Decimal.round_sf()`; the rounding thus follows the
-    /// `rust_decimal::RoundingStrategy::MidpointNearestEven` strategy.
-    fn from(n: Decimal) -> Self {
-        let n = if n.mantissa() < SciDecimal::MAX_SIGNIFICAND_SIGNED.into() {
-            n
-        } else {
-            n.round_sf(16).unwrap()
-        };
-        // The significand should now fit into a `u64`
-        // `n.scale()` is max 28 anyway, should be max 18 at this point
-        Self::new(n.mantissa() as i64, -(n.scale() as i16))
-    }
-}
-
-impl TryFrom<SciDecimal> for Decimal {
-    type Error = rust_decimal::Error;
-
-    /// Attempts to convert a `SciDecimal` into a `rust_decimal::Decimal`, dropping
-    /// any uncertainty.
-    ///
-    /// Fails if `n` has a positive exponent or an exponent lower than −28.
-    fn try_from(n: SciDecimal) -> Result<Decimal, rust_decimal::Error> {
-        if n.exponent.is_positive() {
-            Err(rust_decimal::Error::ConversionTo("Decimal".to_string()))
-        } else {
-            Decimal::try_from_i128_with_scale(
-                n.significand_signed().into(),
-                (BiasedExponent::EXPONENT_BIAS - n.exponent.0).into(),
-            )
-        }
-    }
-}
-
-impl From<BigDecimal> for SciDecimal {
-    /// Converts a `bigdecimal::BigDecimal` to a `SciDecimal`.
-    /// 
-    /// The conversion currently goes via the string representation.
-    ///
-    /// A silent loss of precision will occur if the `BigDecimal` has a significand
-    /// with more than 16 significant figures.
-    fn from(n: BigDecimal) -> Self {
-        n.to_scientific_notation().parse().unwrap()
-    }
-}
-
-impl From<SciDecimal> for BigDecimal {
-    /// Converts a `SciDecimal` into a `bigdecimal::BigDecimal`, dropping any uncertainty.
-    fn from(n: SciDecimal) -> Self {
-        BigDecimal::from_bigint(
-            BigInt::from_i64(n.significand_signed()).unwrap(),
-            -(n.exponent()) as i64,
-        )
-    }
-}
-
-macro_rules! impl_from_int {
-    ($T:ty) => {
-        impl From<$T> for SciDecimal {
-            fn from(t: $T) -> Self {
-                Self::new(t.into(), 0)
-            }
-        }
-    };
-}
-
-impl_from_int!(i8);
-impl_from_int!(i16);
-impl_from_int!(i32);
-impl_from_int!(u8);
-impl_from_int!(u16);
-impl_from_int!(u32);
-
 impl PartialEq for SciDecimal {
     fn eq(&self, other: &Self) -> bool {
         if self.is_zero() {
@@ -1118,6 +905,115 @@ impl Ord for SciDecimal {
             .unwrap()
             .cmp(&Decimal::try_from(*other).unwrap())
     }
+}
+
+// Arithmetic with correlation
+impl SciDecimal {
+    //pub fn add_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
+    //where
+    //    T: Into<Decimal>,
+    //{
+    //    let number = Decimal::try_from(self.number()).unwrap() + Decimal::try_from(rhs.number()).unwrap();
+    //    if self.is_exact() && rhs.is_exact() {
+    //        Self::from(number)
+    //    } else {
+    //        let sigma_ab = correlation.into()
+    //            * Decimal::try_from(self.uncertainty()).unwrap()
+    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
+    //        let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
+    //            + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2))
+    //            + (Decimal::TWO * sigma_ab))
+    //            .sqrt()
+    //            .unwrap();
+    //        Self::from(number).with_uncertainty(uncertainty.into())
+    //    }
+    //}
+
+    //pub fn sub_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
+    //where
+    //    T: Into<Decimal>,
+    //{
+    //    let number = Decimal::try_from(self.number()).unwrap() - Decimal::try_from(rhs.number()).unwrap();
+    //    if self.is_exact() && rhs.is_exact() {
+    //        Self::from(number)
+    //    } else {
+    //        let sigma_ab = correlation.into()
+    //            * Decimal::try_from(self.uncertainty()).unwrap()
+    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
+    //        let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
+    //            + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2))
+    //            - (Decimal::TWO * sigma_ab))
+    //            .sqrt()
+    //            .unwrap();
+    //        Self::from(number).with_uncertainty(uncertainty.into())
+    //    }
+    //}
+
+    //pub fn mul_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
+    //where
+    //    T: Into<Decimal>,
+    //{
+    //    let number = Decimal::try_from(self.number()).unwrap() * Decimal::try_from(rhs.number()).unwrap();
+    //    if self.is_exact() && rhs.is_exact() {
+    //        Self::from(number)
+    //    } else {
+    //        let sigma_ab = correlation.into()
+    //            * Decimal::try_from(self.uncertainty()).unwrap()
+    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
+    //        let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap().powu(2))
+    //            + (Decimal::try_from(rhs.relative_uncertainty()).unwrap().powu(2))
+    //            + (Decimal::TWO * sigma_ab / number))
+    //            .sqrt()
+    //            .unwrap()
+    //            * number.abs();
+    //        Self::from(number).with_uncertainty(uncertainty.into())
+    //    }
+    //}
+
+    //pub fn div_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
+    //where
+    //    T: Into<Decimal>,
+    //{
+    //    let number = Decimal::try_from(self.number()).unwrap() / Decimal::try_from(rhs.number()).unwrap();
+    //    if self.is_exact() && rhs.is_exact() {
+    //       Self::from(number)
+    //    } else {
+    //        let sigma_ab = correlation.into()
+    //            * Decimal::try_from(self.uncertainty()).unwrap()
+    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
+    //        let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap().powu(2))
+    //            + (Decimal::try_from(rhs.relative_uncertainty()).unwrap().powu(2))
+    //            - (Decimal::TWO * sigma_ab / number))
+    //            .sqrt()
+    //            .unwrap()
+    //            * number.abs();
+    //        Self::from(number).with_uncertainty(uncertainty.into())
+    //    }
+    //}
+
+    //pub fn pow_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
+    //where
+    //    T: Into<Decimal>,
+    //{
+    //    let number = Decimal::try_from(self.number()).unwrap().powd(Decimal::try_from(rhs.number()).unwrap());
+    //    if self.is_exact() && rhs.is_exact() {
+    //        Self::from(number)
+    //    } else {
+    //        let sigma_ab = correlation.into()
+    //            * Decimal::try_from(self.uncertainty()).unwrap()
+    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
+    //        let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap() * Decimal::try_from(rhs.number()).unwrap()).powu(2)
+    //            + (Decimal::try_from(self.number()).unwrap().ln() * Decimal::try_from(rhs.uncertainty()).unwrap()).powu(2)
+    //            + (Decimal::TWO
+    //                * ((Decimal::try_from(self.number()).unwrap().ln() * Decimal::try_from(rhs.number()).unwrap())
+    //                    / Decimal::try_from(self.number()).unwrap())
+    //                * sigma_ab))
+    //            .sqrt()
+    //            .unwrap()
+    //            * number.abs();
+    //        Self::from(number).with_uncertainty(uncertainty.into())
+    //    }
+    //}
 }
 
 impl Add for SciDecimal {
@@ -1399,15 +1295,6 @@ impl Inv for &SciDecimal {
     }
 }
 
-//impl Debug for SciDecimal {
-//    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//        f.debug_struct("SciDecimal")
-//            .field("number", &self.number())
-//            .field("uncertainty", &self.uncertainty())
-//            .finish()
-//    }
-//}
-
 impl fmt::Display for SciDecimal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let sign = if self.negative {
@@ -1525,6 +1412,84 @@ macro_rules! sci {
         SciDecimal::from_str(stringify!($s)).unwrap()
     };
 }
+
+impl From<Decimal> for SciDecimal {
+    /// Converts a `rust_decimal::Decimal` to a `SciDecimal`.
+    ///
+    /// A silent loss of precision will occur if the `Decimal` has a significand
+    /// wider than 64 bits.
+    /// If this is the case, `n` is first rounded to 16 significant figures using
+    /// `Decimal.round_sf()`; the rounding thus follows the
+    /// `rust_decimal::RoundingStrategy::MidpointNearestEven` strategy.
+    fn from(n: Decimal) -> Self {
+        let n = if n.mantissa() < SciDecimal::MAX_SIGNIFICAND_SIGNED.into() {
+            n
+        } else {
+            n.round_sf(16).unwrap()
+        };
+        // The significand should now fit into a `u64`
+        // `n.scale()` is max 28 anyway, should be max 18 at this point
+        Self::new(n.mantissa() as i64, -(n.scale() as i16))
+    }
+}
+
+impl TryFrom<SciDecimal> for Decimal {
+    type Error = rust_decimal::Error;
+
+    /// Attempts to convert a `SciDecimal` into a `rust_decimal::Decimal`, dropping
+    /// any uncertainty.
+    ///
+    /// Fails if `n` has a positive exponent or an exponent lower than −28.
+    fn try_from(n: SciDecimal) -> Result<Decimal, rust_decimal::Error> {
+        if n.exponent.is_positive() {
+            Err(rust_decimal::Error::ConversionTo("Decimal".to_string()))
+        } else {
+            Decimal::try_from_i128_with_scale(
+                n.significand_signed().into(),
+                (BiasedExponent::EXPONENT_BIAS - n.exponent.0).into(),
+            )
+        }
+    }
+}
+
+impl From<BigDecimal> for SciDecimal {
+    /// Converts a `bigdecimal::BigDecimal` to a `SciDecimal`.
+    /// 
+    /// The conversion currently goes via the string representation.
+    ///
+    /// A silent loss of precision will occur if the `BigDecimal` has a significand
+    /// with more than 16 significant figures.
+    fn from(n: BigDecimal) -> Self {
+        n.to_scientific_notation().parse().unwrap()
+    }
+}
+
+impl From<SciDecimal> for BigDecimal {
+    /// Converts a `SciDecimal` into a `bigdecimal::BigDecimal`, dropping any uncertainty.
+    fn from(n: SciDecimal) -> Self {
+        BigDecimal::from_bigint(
+            BigInt::from_i64(n.significand_signed()).unwrap(),
+            -(n.exponent()) as i64,
+        )
+    }
+}
+
+macro_rules! impl_from_int {
+    ($T:ty) => {
+        impl From<$T> for SciDecimal {
+            fn from(t: $T) -> Self {
+                Self::new(t.into(), 0)
+            }
+        }
+    };
+}
+
+impl_from_int!(i8);
+impl_from_int!(i16);
+impl_from_int!(i32);
+impl_from_int!(u8);
+impl_from_int!(u16);
+impl_from_int!(u32);
 
 #[cfg(test)]
 mod tests {
