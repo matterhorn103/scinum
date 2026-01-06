@@ -142,11 +142,11 @@ impl SciDecimal {
     /// This is slightly larger than the range of `f64` significands.
     pub const MAX_SIGNIFICAND: u64 = 10_u64.pow(16) - 1;
 
-    /// The minimum supported signed significand.
-    const MIN_SIGNIFICAND_SIGNED: i64 = -(Self::MAX_SIGNIFICAND as i64);
+    /// The lowest supported signed significand.
+    pub const MIN_SIGNIFICAND_SIGNED: i64 = -(Self::MAX_SIGNIFICAND as i64);
 
-    /// The maximum supported signed significand.
-    const MAX_SIGNIFICAND_SIGNED: i64 = Self::MAX_SIGNIFICAND as i64;
+    /// The highest supported signed significand.
+    pub const MAX_SIGNIFICAND_SIGNED: i64 = Self::MAX_SIGNIFICAND as i64;
 
     /// The highest supported number.
     pub const MAX: SciDecimal = SciDecimal {
