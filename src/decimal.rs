@@ -125,7 +125,7 @@ impl From<BiasedExponent> for i16 {
 #[derive(Copy, Clone, Debug, serde_with::DeserializeFromStr, serde_with::SerializeDisplay)]
 pub struct SciDecimal {
     uncertainty: u32,
-    uncertainty_scale: u8, // This allows the uncertainty to have a different precision
+    uncertainty_scale: i8, // This allows the uncertainty to have a different precision
     // Have the uncertainty come first so that the bits used for comparisons are
     // the 81 least significant bits, just like in IEEE floating point formats
     negative: bool,
@@ -158,7 +158,7 @@ impl SciNum for SciDecimal {
             uncertainty: 0,
             uncertainty_scale: 0,
             negative: false,
-            exponent: BiasedExponent(self.exponent.0 - self.uncertainty_scale as u16),
+            exponent: (self.exponent.unbias() + self.uncertainty_scale as i16).into(),
             significand: self.uncertainty.into(),
         }
     }
@@ -193,7 +193,7 @@ impl SciNum for SciDecimal {
         } else {
             uncertainty
         };
-        self.uncertainty_scale = (self.exponent.0 - narrowed_uncertainty.exponent.0)
+        self.uncertainty_scale = (narrowed_uncertainty.exponent.unbias() - self.exponent.unbias())
             .try_into()
             .expect(
                 "Difference in precision of number and uncertainty should never be this large!",
@@ -626,7 +626,7 @@ impl SciDecimal {
             self.exponent.0 += 1;
             // Uncertainty is now too large
             if !self.is_exact() {
-                self.uncertainty_scale += 1;
+                self.uncertainty_scale -= 1;
             };
         }
         self
@@ -650,7 +650,7 @@ impl SciDecimal {
             self.exponent.0 -= 1;
             // Uncertainty is now too small
             if !self.is_exact() {
-                self.uncertainty_scale -= 1;
+                self.uncertainty_scale += 1;
             };
         }
         self
@@ -669,7 +669,7 @@ impl SciDecimal {
             self.exponent.0 = self.exponent.0.checked_sub(1)?;
             // Uncertainty is now too small
             if !self.is_exact() {
-                self.uncertainty_scale = self.uncertainty_scale.checked_sub(1)?;
+                self.uncertainty_scale += 1;
             };
         }
         Some(self)
