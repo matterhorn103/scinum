@@ -65,10 +65,16 @@ impl SciNum for SciFloat {
             uncertainty,
         }
     }
-    
-    const ZERO: Self =  SciFloat { number: 0.0, uncertainty: 0.0 };
-    
-    const ONE: Self =  SciFloat { number: 1.0, uncertainty: 0.0 };
+
+    const ZERO: Self = SciFloat {
+        number: 0.0,
+        uncertainty: 0.0,
+    };
+
+    const ONE: Self = SciFloat {
+        number: 1.0,
+        uncertainty: 0.0,
+    };
 }
 
 impl From<f64> for SciFloat {
