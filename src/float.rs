@@ -151,7 +151,56 @@ impl One for SciFloat {
 }
 
 // Methods that will belong to the Real trait if we implement it properly later
-// impl Real for SciFloat {
+
+    //todo fn min_value()
+    //todo fn min_positive_value()
+    //todo fn epsilon()
+    //todo fn max_value()
+    //todo fn floor(self)
+    //todo fn ceil(self)
+    //todo fn round(self)
+    //todo fn trunc(self)
+    //todo fn fract(self)
+//*fn abs(self)
+    //todo fn signum(self)
+    //todo fn is_sign_positive(self) -> bool {
+    //todo fn is_sign_negative(self) -> bool {
+    //todo fn mul_add(self, a: Self, b: Self)
+    //todo fn recip(self)
+//*fn powi(self, n: i32)
+    //todo fn powf(self, n: Self)
+//*fn sqrt(self)
+//*fn exp(self)
+    //todo fn exp2(self)
+//*fn ln(self)
+    //todo fn log(self, base: Self)
+    //todo fn log2(self)
+//*fn log10(self)
+//*fn to_degrees(self)
+//*fn to_radians(self)
+//*fn max(self, other: Self)
+//*fn min(self, other: Self)
+//*fn cbrt(self)
+//*fn hypot(self, other: Self)
+//*fn sin(self)
+//*fn cos(self)
+//*fn tan(self)
+    //todo fn asin(self)
+    //todo fn acos(self)
+    //todo fn atan(self)
+    //todo fn atan2(self, other: Self)
+//*fn sin_cos(self) -> (Self, Self) {
+    //todo fn exp_m1(self)
+    //todo fn ln_1p(self)
+    //todo fn sinh(self)
+    //todo fn cosh(self)
+    //todo fn tanh(self)
+    //todo fn asinh(self)
+    //todo fn acosh(self)
+    //todo fn atanh(self)
+
+// changed `Real` to `Float` for some reason
+// impl Float for SciFloat {
 impl SciFloat {
     //fn min_value() -> Self {
     //    todo!()
@@ -277,57 +326,57 @@ impl SciFloat {
         }
     }
 
-    fn to_degrees(self) -> Self {
+    pub fn to_degrees(self) -> Self {
         let number = self.number() * (180.0 / f64::PI());
         let uncertainty = self.uncertainty() * (180.0 / f64::PI());
         Self { number, uncertainty }
     }
 
-    fn to_radians(self) -> Self {
+    pub fn to_radians(self) -> Self {
         let number = self.number() * (f64::PI() / 180.0);
         let uncertainty = self.uncertainty() * (f64::PI() / 180.0);
         Self { number, uncertainty }
     }
 
-    fn max(self, other: Self) -> Self {
+    pub fn max(self, other: Self) -> Self {
         match self > other {
             true => self,
             false => other
         }
     }
 
-    fn min(self, other: Self) -> Self {
+    pub fn min(self, other: Self) -> Self {
         match self < other {
             true => self,
             false => other
         }
     }
 
-    fn cbrt(self) -> Self {
+    pub fn cbrt(self) -> Self {
         let number: f64 = self.number().cbrt();
         let uncertainty: f64 = (number * self.uncertainty()) / (3.0 * self.number());
         Self { number, uncertainty }
     }
 
-    fn hypot(self, other: Self) -> Self {
+    pub fn hypot(self, other: Self) -> Self {
         let number = (self.number().powi(2) + other.number().powi(2)).sqrt();
         let uncertainty = ((self.number() * self.uncertainty()).abs() + (other.number() * other.uncertainty()).abs()) / number;
         Self { number, uncertainty }
     }
 
-    fn sin(self) -> Self {
+    pub fn sin(self) -> Self {
         let number = self.number().sin();
         let uncertainty = (self.number().cos() * self.uncertainty()).abs();
         Self { number, uncertainty }
     }
 
-    fn cos(self) -> Self {
+    pub fn cos(self) -> Self {
         let number = self.number().cos();
         let uncertainty = (self.number().sin() * self.uncertainty()).abs();
         Self { number, uncertainty }
     }
 
-    fn tan(self) -> Self {
+    pub fn tan(self) -> Self {
         let number = self.number().tan();
         let uncertainty: f64 = ((1_f64 / (self.number().cos().powi(2))) * self.uncertainty()).abs();
         Self { number, uncertainty }
@@ -349,7 +398,7 @@ impl SciFloat {
     //    todo!()
     //}
 
-    fn sin_cos(self) -> (Self, Self) {
+    pub fn sin_cos(self) -> (Self, Self) {
         (self.sin(), self.cos())
     }
 
