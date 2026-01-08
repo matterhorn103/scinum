@@ -517,67 +517,6 @@ impl Inv for &SciFloat {
     }
 }
 
-impl Pow<Self> for SciFloat {
-    type Output = Self;
-
-    /// Raise the `SciFloat` to a `SciFloat` power.
-    /// Currently missing correlated uncertainties.
-    fn pow(self, rhs: Self) -> Self {
-        let number: f64 = self.number().pow(rhs.number());
-        let uncertainty: f64 = number
-            * (
-                (self.uncertainty() * (rhs.number() / self.number()))
-                + (rhs.uncertainty() * self.number().ln())
-            );
-
-        Self { number, uncertainty }
-    }
-}
-
-impl Pow<Self> for &SciFloat {
-    type Output = SciFloat;
-
-    fn pow(self, rhs: Self) -> SciFloat {
-        (*self).pow(*rhs)
-    }
-}
-
-impl Neg for SciFloat {
-    type Output = Self;
-
-    #[inline]
-    fn neg(self) -> Self {
-        Self { number: -self.number, ..self }
-    }
-}
-
-impl Neg for &SciFloat {
-    type Output = SciFloat;
-
-    #[inline]
-    fn neg(self) -> SciFloat {
-        SciFloat { number: -self.number, ..*self }
-    }
-}
-
-impl Inv for SciFloat {
-    type Output = Self;
-
-    #[inline]
-    fn inv(self) -> Self {
-        Self::one() / self
-    }
-}
-
-impl Inv for &SciFloat {
-    type Output = SciFloat;
-
-    #[inline]
-    fn inv(self) -> SciFloat {
-        SciFloat::one() / *self
-    }
-}
-
 impl Display for SciFloat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} +/- {}", self.number, self.uncertainty)
@@ -715,21 +654,21 @@ mod tests {
     #[test]
     fn truncate() {
         // Positive
-        let n = scif!(25.6949);
-        assert_eq!(n.truncate(2), scif!(25.69));
-        assert_eq!(n.truncate(3), scif!(25.694));
+        let n = SciFloat::new(25.6949);
+        assert_eq!(n.truncate(2), SciFloat::new(25.69));
+        assert_eq!(n.truncate(3), SciFloat::new(25.694));
         // Negative
-        let n = scif!(-3.794718);
-        assert_eq!(n.truncate(4), scif!(-3.7947));
-        assert_eq!(n.truncate(3), scif!(-3.794));
+        let n = SciFloat::new(-3.794718);
+        assert_eq!(n.truncate(4), SciFloat::new(-3.7947));
+        assert_eq!(n.truncate(3), SciFloat::new(-3.794));
         // Integer
-        let n = scif!(4327890);
-        assert_eq!(n.truncate(4), scif!(4.327e6));
-        assert_eq!(n.truncate(5), scif!(4.3278e6));
+        let n = SciFloat::new(4327890.0);
+        assert_eq!(n.truncate(4), SciFloat::new(4.327e6));
+        assert_eq!(n.truncate(5), SciFloat::new(4.3278e6));
         // Smaller than 1
-        let n = scif!(0.4327890);
-        assert_eq!(n.truncate(4), scif!(4.327e-1));
-        assert_eq!(n.truncate(5), scif!(4.3278e-1));
+        let n = SciFloat::new(0.4327890);
+        assert_eq!(n.truncate(4), SciFloat::new(4.327e-1));
+        assert_eq!(n.truncate(5), SciFloat::new(4.3278e-1));
     }
 
     #[test]
@@ -847,10 +786,10 @@ mod tests {
     #[test]
     fn powi_exact() {
         let n = SciFloat::new(4.0);
-        assert_eq!(n.powi(2), scif!(16));
-        assert_eq!(n.powi(3), scif!(64));
-        assert_eq!(n.powi(-1), scif!(0.25));
-        assert_eq!(n.powi(-2), scif!(0.0625));
+        assert_eq!(n.powi(2), SciFloat::new(16.));
+        assert_eq!(n.powi(3), SciFloat::new(64.));
+        assert_eq!(n.powi(-1), SciFloat::new(0.25));
+        assert_eq!(n.powi(-2), SciFloat::new(0.0625));
     }
 
     #[test]
