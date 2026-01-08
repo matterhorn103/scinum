@@ -3,12 +3,12 @@
 
 pub enum RoundingMode {
     ToNearestTiesAwayFromZero, // Traditional "rounding up"
-    ToNearestTiesTowardZero, // Traditional "rounding down"
-    ToNearestTiesToEven, // Bankers' rounding
-    AwayFromZero, // Up
-    TowardsZero, // Down
-    TowardsPositiveInfinity, // Ceiling
-    TowardsNegativeInfinity, // Floor
+    ToNearestTiesTowardZero,   // Traditional "rounding down"
+    ToNearestTiesToEven,       // Bankers' rounding
+    AwayFromZero,              // Up
+    TowardsZero,               // Down
+    TowardsPositiveInfinity,   // Ceiling
+    TowardsNegativeInfinity,   // Floor
 }
 
 impl From<RoundingMode> for rust_decimal::RoundingStrategy {

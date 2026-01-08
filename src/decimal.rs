@@ -2,20 +2,24 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 use std::{
-    cmp::Ordering, fmt::{self, Debug}, ops::{Add, Div, Mul, Neg, Rem, Sub}, str::FromStr
+    cmp::Ordering,
+    fmt::{self, Debug},
+    num::FpCategory,
+    ops::{Add, Div, Mul, Neg, Rem, Sub},
+    str::FromStr,
 };
 
 use bigdecimal::{BigDecimal, num_bigint::BigInt};
-use num_traits::{FromPrimitive, Inv, Num, One, Pow, Zero};
+use num_traits::{Float, FromPrimitive, Inv, Num, One, Pow, Zero};
 use regex::Regex;
 use rust_decimal::{Decimal, MathematicalOps};
 
 use crate::{SciNum, error::SciNumError};
 
 /// A 16-bit signed exponent represented as a 16-bit unsigned integer by using a bias.
-/// 
-/// b = 2<sup>15</sup> = 32768
-/// 
+///
+/// The bias is _b_ = 2<sup>15</sup> = 32768
+///
 /// For the value of the bias, we deviate from the usual IEEE way of doing
 /// things ever so slightly and use 2<sup>15</sup>rather than 2<sup>15</sup> - 1.
 /// This allows the whole range of `i16` to be covered, so we don't have to worry
@@ -23,7 +27,7 @@ use crate::{SciNum, error::SciNumError};
 /// It also means that unbiased `0_i16` corresponds to binary
 /// `0b1000000000000000` in the biased representation, `i16::MIN` corresponds to
 /// all 0s, and `i16::MAX` corresponds to all 1s.
-/// 
+///
 /// Implemented as a wrapper around `u16` primarily to avoid accidentally doing
 /// arithmetic operations on it that only make sense for the unbiased form.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -35,6 +39,7 @@ impl BiasedExponent {
 
     const ZERO: BiasedExponent = BiasedExponent(BiasedExponent::EXPONENT_BIAS);
 
+    #[allow(unused)]
     const MIN: BiasedExponent = BiasedExponent(0);
 
     const MAX: BiasedExponent = BiasedExponent(u16::MAX);
@@ -77,6 +82,7 @@ impl BiasedExponent {
         self.0 > Self::EXPONENT_BIAS
     }
 
+    #[allow(unused)]
     /// Returns true if the exponent is less than 0 in the signed integer form.
     #[inline]
     fn is_negative(&self) -> bool {
@@ -122,135 +128,131 @@ impl From<BiasedExponent> for i16 {
 #[derive(Copy, Clone, Debug, serde_with::DeserializeFromStr, serde_with::SerializeDisplay)]
 pub struct SciDecimal {
     uncertainty: u32,
-    uncertainty_scale: u8, // This allows the uncertainty to have a different precision
-    // Have the uncertainty come first so that the bits used for comparisons are
-    // the 81 least significant bits, just like in IEEE floating point formats
+    uncertainty_scale: i8, // This allows the uncertainty to have a different precision
+    nan: bool,
+    inf: bool,
     negative: bool,
     exponent: BiasedExponent,
     significand: u64,
 }
 
-const MIN_NUMBER: i128 = -0xFFFFFFFFFFFFFFFF;
-const MAX_NUMBER: i128 = 0xFFFFFFFFFFFFFFFF;
+// Constants that don't belong to specific traits
+impl SciDecimal {
+    /// The maximum supported (unsigned) significand.
+    ///
+    /// `SciDecimal` supports up to 16 decimal digits, matching the precision of the
+    /// IEEE 754 `decimal64` interchange format.
+    ///
+    /// This is slightly larger than the range of `f64` significands.
+    pub const MAX_SIGNIFICAND: u64 = 10_u64.pow(16) - 1;
 
-impl TryFrom<f64> for SciDecimal {
-    type Error = ();
+    /// The lowest supported signed significand.
+    pub const MIN_SIGNIFICAND_SIGNED: i64 = -(Self::MAX_SIGNIFICAND as i64);
 
-    fn try_from(value: f64) -> Result<Self, Self::Error> {
-        if !value.is_normal() {
-            return Err(());
-        }
+    /// The highest supported signed significand.
+    pub const MAX_SIGNIFICAND_SIGNED: i64 = Self::MAX_SIGNIFICAND as i64;
 
-        if value.fract() == 0.0 {
-            return Ok(SciDecimal::new(value as i128, 0))
-        } else {
-            let mut val = value;
-            let eps = 1e-4;
-            let mut exponent: i16 = 0;
-            while (val.round() - val).abs() > eps {
-                val = 10.0 * val;
-                exponent += 1;
-            }
-            Ok(SciDecimal::new(val.round() as i128, exponent))
-        }
-    }
+    /// The lowest supported number.
+    pub const MIN: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: BiasedExponent::ZERO,
+        significand: u64::MAX,
+    };
+
+    /// The highest supported number.
+    pub const MAX: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: false,
+        exponent: BiasedExponent::MAX,
+        significand: u64::MAX,
+    };
+
+    /// The `SciDecimal` representation of `NaN`, "not a number".
+    pub const NAN: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: true,
+        inf: false,
+        negative: false,
+        exponent: BiasedExponent::ZERO,
+        significand: 0,
+    };
+
+    /// The `SciDecimal` representation of positive infinity.
+    pub const INFINITY: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: true,
+        negative: false,
+        exponent: BiasedExponent::ZERO,
+        significand: 0,
+    };
+
+    /// The `SciDecimal` representation of negative infinity.
+    pub const NEG_INFINITY: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: true,
+        negative: true,
+        exponent: BiasedExponent::ZERO,
+        significand: 0,
+    };
+
+    /// The `SciDecimal` representation of negative zero.
+    pub const NEG_ZERO: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: BiasedExponent::ZERO,
+        significand: 0,
+    };
 }
 
-impl TryFrom<SciDecimal> for f64 {
-    type Error = ();
-
-    fn try_from(value: SciDecimal) -> Result<Self, Self::Error> {
-        if !value.is_exact() {
-            return Err(());
-        }
-        let mut significand = value.significand as f64;
-        if value.negative {
-            significand *= -1.0
-        }
-
-        Ok(significand * (10.0_f64).powi(value.exponent() as i32))
-
-    }
-}
-
-impl SciNum for SciDecimal {
-    type Number = SciDecimal;
-
-    /// Returns the number as an exact `SciDecimal` without its uncertainty.
+impl Zero for SciDecimal {
     #[inline]
-    fn number(&self) -> Self {
-        Self {
-            uncertainty: 0,
-            uncertainty_scale: 0,
-            ..*self
-        }
+    fn zero() -> Self {
+        Self::ZERO
     }
 
-    /// Returns the absolute uncertainty as an exact `SciDecimal`.
-    ///
-    /// The uncertainty is always positive.
-    #[inline]
-    fn uncertainty(&self) -> Self {
-        Self {
-            uncertainty: 0,
-            uncertainty_scale: 0,
-            negative: false,
-            exponent: BiasedExponent(self.exponent.0 - self.uncertainty_scale as u16),
-            significand: self.uncertainty.into(),
-        }
-    }
-
-    /// Returns the relative uncertainty as an exact `SciDecimal`.
-    ///
-    /// The relative uncertainty is always positive.
-    #[inline]
-    fn relative_uncertainty(&self) -> Self {
-        self.uncertainty() / self.number().abs()
-    }
-
-    /// Creates a new `SciDecimal` with the same number but the provided
+    /// Returns true if the `SciDecimal` is equal to zero, regardless of any
     /// uncertainty.
-    ///
-    /// If the uncertainty has a significand greater than `u32::MAX` (i.e. more
-    /// than ~9 significant figures), it is first truncated to 9 s.f.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// # use scinum::SciDecimal;
-    /// #
-    /// let n = SciDecimal::new(251, -3).with_uncertainty(SciDecimal::new(3, -3));
-    /// assert_eq!(n.to_string(), "0.251(3)");
-    /// assert_eq!(n, SciDecimal::new_with_uncertainty(251, 3, -3));
     #[inline]
-    fn with_uncertainty(mut self, uncertainty: Self) -> Self {
-        let narrowed_uncertainty = if uncertainty.significand > u32::MAX.into() {
-            uncertainty.truncate(9);
-            uncertainty
+    fn is_zero(&self) -> bool {
+        if self.nan | self.inf {
+            false
         } else {
-            uncertainty
-        };
-        self.uncertainty_scale = (self.exponent.0 - narrowed_uncertainty.exponent.0)
-            .try_into()
-            .expect(
-                "Difference in precision of number and uncertainty should never be this large!",
-            );
-        self.uncertainty = narrowed_uncertainty
-            .significand
-            .try_into()
-            .expect("Already made sure that this is not greater than `u32::MAX`");
-        self
+            self.significand == 0
+        }
     }
 }
 
+impl One for SciDecimal {
+    #[inline]
+    fn one() -> Self {
+        Self::ONE
+    }
+}
+
+// Instantiation
 impl SciDecimal {
     /// Creates an exact `SciDecimal` from parts corresponding to _m_ ×
     /// 10<sup><i>n</i></sup>.
     ///
     /// # Panics
     ///
-    /// This function panics if the unsigned value of the number is larger than
-    /// `u64::MAX` i.e. outside of the range −(2<sup>64</sup>) to 2<sup>64</sup>.
+    /// This function panics if the number has more than 16 significant figures
+    /// (i.e. is larger than `MAX_SIGNIFICAND` = 2<sup>16</sup>)
     ///
     /// # Example
     ///
@@ -260,16 +262,18 @@ impl SciDecimal {
     /// let n = SciDecimal::new(251, -3);
     /// assert_eq!(n.to_string(), "0.251");
     /// ```
-    pub fn new(number: i128, exponent: i16) -> Self {
-        if !(MIN_NUMBER..=MAX_NUMBER).contains(&number) {
+    pub fn new(number: i64, exponent: i16) -> Self {
+        if !(Self::MIN_SIGNIFICAND_SIGNED..=Self::MAX_SIGNIFICAND_SIGNED).contains(&number) {
             panic!("{number} has too many significant figures for a significand!")
         }
         Self {
             uncertainty: 0,
             uncertainty_scale: 0,
+            nan: false,
+            inf: false,
             negative: number.is_negative(),
             exponent: exponent.into(),
-            significand: number.unsigned_abs() as u64,
+            significand: number.unsigned_abs(),
         }
     }
 
@@ -281,8 +285,8 @@ impl SciDecimal {
     ///
     /// # Panics
     ///
-    /// This function panics if the unsigned value of the number is larger than
-    /// `u64::MAX` i.e. outside of the range −(2<sup>64</sup>) to 2<sup>64</sup>.
+    /// This function panics if the number has more than 16 significant figures
+    /// (i.e. is larger than `MAX_SIGNIFICAND` = 2<sup>16</sup>)
     ///
     /// # Example
     ///
@@ -292,17 +296,18 @@ impl SciDecimal {
     /// let n = SciDecimal::new_with_uncertainty(251, 3, -3);
     /// assert_eq!(n.to_string(), "0.251(3)");
     /// ```
-    pub fn new_with_uncertainty(number: i128, uncertainty: u32, exponent: i16) -> Self {
-        if !(MIN_NUMBER..=MAX_NUMBER).contains(&number)
-        {
+    pub fn new_with_uncertainty(number: i64, uncertainty: u32, exponent: i16) -> Self {
+        if !(Self::MIN_SIGNIFICAND_SIGNED..=Self::MAX_SIGNIFICAND_SIGNED).contains(&number) {
             panic!("{number} has too many significant figures for a significand!")
         }
         Self {
             uncertainty,
             uncertainty_scale: 0,
+            nan: false,
+            inf: false,
             negative: number.is_negative(),
             exponent: exponent.into(),
-            significand: number.unsigned_abs() as u64,
+            significand: number.unsigned_abs(),
         }
     }
 
@@ -324,7 +329,8 @@ impl SciDecimal {
     ///
     /// # Panics
     ///
-    /// This function panics if the overall significand does not fit into `u64`.
+    /// This function panics if the overall significand has more than 16 significant
+    /// figures.
     ///
     /// # Example
     ///
@@ -352,7 +358,11 @@ impl SciDecimal {
         let unsigned_integer: u64 = integer.unsigned_abs().into();
         let (significand, exponent) = {
             if fraction != 0 || zeros != 0 {
-                let decimal_places = if fraction == 0 { 0 } else { fraction.ilog10() + 1 };
+                let decimal_places = if fraction == 0 {
+                    0
+                } else {
+                    fraction.ilog10() + 1
+                };
                 let significand =
                     (unsigned_integer * 10_u64.pow(decimal_places + zeros as u32)) + fraction;
                 let exponent = exponent - (decimal_places as i16 + zeros as i16);
@@ -361,15 +371,23 @@ impl SciDecimal {
                 (unsigned_integer, exponent)
             }
         };
+        if significand > Self::MAX_SIGNIFICAND {
+            panic!("{significand} has too many significant figures for a significand!")
+        }
         Self {
             uncertainty,
             uncertainty_scale: 0,
+            nan: false,
+            inf: false,
             negative: integer.is_negative(),
             exponent: exponent.into(),
             significand,
         }
     }
+}
 
+// Methods for obtaining parts of the contained data
+impl SciDecimal {
     /// Returns the integer part, number of fractional leading zeros,
     /// fractional part, uncertainty, and exponent of the number when represented
     /// with normalized notation i.e. with 10 > _m_ >= 1.
@@ -408,11 +426,11 @@ impl SciDecimal {
     ///
     /// Corresponds to representation of the number as `mmmmm × 10^nn`.
     #[inline]
-    pub fn significand_signed(&self) -> i128 {
+    pub fn significand_signed(&self) -> i64 {
         if self.negative {
-            -(self.significand as i128)
+            -(self.significand as i64)
         } else {
-            self.significand as i128
+            self.significand as i64
         }
     }
 
@@ -424,58 +442,660 @@ impl SciDecimal {
     pub fn exponent(&self) -> i16 {
         self.exponent.unbias()
     }
+}
 
-    // Returns the significand _m_ of the number when represented with
-    // normalized notation i.e. with 10 > _m_ >= 1.
-    //
-    // Corresponds to `iffff` when the number is notated as `i.ffff × 10^nn`.
-    //#[inline]
-    //pub fn significand_normalized(&self) -> i128 {
-    //    let unsigned = (self.number_hi as i128) << 64
-    //        | (self.number_mid as i128) << 32
-    //        | self.number_lo as i128;
-    //    if self.negative { -unsigned } else { unsigned }
-    //}
-
-    /// Returns the exponent _n_ of the number when represented with normalized
-    /// notation i.e. with 10 > _m_ >= 1.
+// Precision, figures, and rounding
+impl SciDecimal {
+    /// Returns the scale of the last significant place.
     ///
-    /// Corresponds to `nn` when the number is notated as `ii.ffff(uu) × 10^nn`.
+    /// For example:
+    /// - 0.02 returns -2
+    /// - 0.020 returns -3
+    /// - 2 returns 0
+    /// - 200 returns 2 or 1 or 0, depending on the precision of the number
     #[inline]
-    pub fn exponent_normalized(&self) -> i16 {
-        todo!()
+    pub fn precision(&self) -> i16 {
+        self.exponent()
+    }
+
+    /// Returns the scale of the most significant place.
+    ///
+    /// This is equivalent to the exponent _n_ of the number when represented with
+    /// normalized notation i.e. with 10 > _m_ >= 1.
+    ///
+    /// For example:
+    /// - 0.02 returns -2
+    /// - 0.025 returns -2
+    /// - 0.020 returns -2
+    /// - 2 returns 0
+    /// - 321 returns 2
+    #[inline]
+    pub fn precision_most_significant_fig(&self) -> i16 {
+        self.exponent() + (i16::from(self.sigfigs()) - 1)
+    }
+
+    /// Returns the number of significant decimal digits in the significand.
+    /// 0 is considered to have 0 significant figures.
+    #[inline]
+    pub fn sigfigs(&self) -> u8 {
+        if let Some(log) = self.significand.checked_ilog10() {
+            log as u8 + 1
+        } else {
+            0
+        }
+    }
+
+    /// Removes significant figures from the significand until the desired number
+    /// is reached.
+    ///
+    /// Equivalent to rounding towards zero.
+    ///
+    /// The uncertainty of the `SciDecimal` is left unchanged.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the `SciDecimal` already has fewer significant figures
+    /// than the requested number.
+    pub fn truncate(mut self, sf: u8) -> Self {
+        if self.sigfigs() < sf {
+            panic!()
+        };
+        while self.sigfigs() > sf {
+            self.significand /= 10;
+            // Exponent is now too small
+            self.exponent.0 += 1;
+            // Uncertainty is now too large
+            if !self.is_exact() {
+                self.uncertainty_scale -= 1;
+            };
+        }
+        self
+    }
+
+    /// Increases the precision of the number by adding additional significant zeros
+    /// to the significand.
+    ///
+    /// This is equivalent to decreasing the exponent by `sf`.
+    ///
+    /// The uncertainty of the `SciDecimal` is left unchanged.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the increase would result in `significand`,
+    /// `exponent`, or `uncertainty_scale` exceeding their maximum values.
+    pub fn increase_precision(mut self, sf: u8) -> Self {
+        for _ in 0..sf {
+            self.significand *= 10;
+            // Exponent is now too large
+            self.exponent.0 -= 1;
+            // Uncertainty is now too small
+            if !self.is_exact() {
+                self.uncertainty_scale += 1;
+            };
+        }
+        self
+    }
+
+    /// Increases the precision of the number by adding additional significant zeros
+    /// to the significand, without panicking.
+    ///
+    /// This is equivalent to decreasing the exponent by `sf`.
+    ///
+    /// The uncertainty of the `SciDecimal` is left unchanged.
+    pub fn checked_increase_precision(mut self, sf: u8) -> Option<Self> {
+        for _ in 0..sf {
+            self.significand = self.significand.checked_mul(10)?;
+            // Exponent is now too large
+            self.exponent.0 = self.exponent.0.checked_sub(1)?;
+            // Uncertainty is now too small
+            if !self.is_exact() {
+                self.uncertainty_scale += 1;
+            };
+        }
+        Some(self)
+    }
+}
+
+impl SciNum for SciDecimal {
+    type Number = SciDecimal;
+
+    const ZERO: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: false,
+        exponent: BiasedExponent::ZERO,
+        significand: 0,
+    };
+
+    const ONE: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: false,
+        exponent: BiasedExponent::ZERO,
+        significand: 1,
+    };
+
+    /// Returns the number as an exact `SciDecimal` without its uncertainty.
+    #[inline]
+    fn number(&self) -> Self {
+        Self {
+            uncertainty: 0,
+            uncertainty_scale: 0,
+            ..*self
+        }
+    }
+
+    /// Returns the absolute uncertainty as an exact `SciDecimal`.
+    ///
+    /// The uncertainty is always positive.
+    /// 
+    /// An infinity always has an uncertainty of (positive) infinity, and `NaN`
+    /// always has an uncertainty of `NaN`.
+    #[inline]
+    fn uncertainty(&self) -> Self {
+        if self.nan {
+            Self::NAN
+        } else if self.inf {
+            Self::INFINITY
+        } else {
+            Self {
+                uncertainty: 0,
+                uncertainty_scale: 0,
+                nan: false,
+                inf: false,
+                negative: false,
+                exponent: (self.exponent.unbias() + self.uncertainty_scale as i16).into(),
+                significand: self.uncertainty.into(),
+            }
+        }
+    }
+
+    /// Returns the relative uncertainty as an exact `SciDecimal`.
+    ///
+    /// The relative uncertainty is always positive.
+    #[inline]
+    fn relative_uncertainty(&self) -> Self {
+        self.uncertainty() / self.number().abs()
+    }
+
+    /// Creates a new `SciDecimal` with the same number but the provided
+    /// uncertainty.
+    ///
+    /// If the uncertainty has a significand greater than `u32::MAX` (i.e. more
+    /// than ~9 significant figures), it is first truncated to 9 s.f.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use scinum::SciDecimal;
+    /// #
+    /// let n = SciDecimal::new(251, -3).with_uncertainty(SciDecimal::new(3, -3));
+    /// assert_eq!(n.to_string(), "0.251(3)");
+    /// assert_eq!(n, SciDecimal::new_with_uncertainty(251, 3, -3));
+    #[inline]
+    fn with_uncertainty(mut self, uncertainty: Self) -> Self {
+        let narrowed_uncertainty = if uncertainty.significand > u32::MAX.into() {
+            uncertainty.truncate(9);
+            uncertainty
+        } else {
+            uncertainty
+        };
+        self.uncertainty_scale = (narrowed_uncertainty.exponent.unbias() - self.exponent.unbias())
+            .try_into()
+            .expect(
+                "Difference in precision of number and uncertainty should never be this large!",
+            );
+        self.uncertainty = narrowed_uncertainty
+            .significand
+            .try_into()
+            .expect("Already made sure that this is not greater than `u32::MAX`");
+        self
     }
 
     /// Returns true if the `SciDecimal` has an uncertainty of zero.
     #[inline]
-    pub fn is_exact(&self) -> bool {
+    fn is_exact(&self) -> bool {
         self.uncertainty == 0
+    }
+}
+
+impl Num for SciDecimal {
+    type FromStrRadixErr = rust_decimal::Error;
+
+    fn from_str_radix(str: &str, radix: u32) -> Result<Self, rust_decimal::Error> {
+        // For now, just make use of the Decimal implementation
+        let dec = Decimal::from_str_radix(str, radix)?;
+        Ok(Self::from(dec))
+    }
+}
+
+// Methods that will belong to the Float trait when we implement it properly later
+//impl Float for SciDecimal {
+impl SciDecimal {
+    #[inline]
+    pub fn nan() -> Self {
+        Self::NAN
+    }
+
+    #[inline]
+    pub fn infinity() -> Self {
+        Self::INFINITY
+    }
+
+    #[inline]
+    pub fn neg_infinity() -> Self {
+        Self::NEG_INFINITY
+    }
+
+    #[inline]
+    pub fn neg_zero() -> Self {
+        Self::NEG_ZERO
+    }
+
+    fn min_value() -> Self {
+        todo!()
+    }
+
+    fn min_positive_value() -> Self {
+        todo!()
+    }
+
+    fn max_value() -> Self {
+        todo!()
+    }
+
+    #[inline]
+    pub fn is_nan(self) -> bool {
+        self.nan
+    }
+
+    #[inline]
+    pub fn is_infinite(self) -> bool {
+        self.inf
+    }
+
+    #[inline]
+    pub fn is_finite(self) -> bool {
+        !(self.inf | self.nan)
+    }
+
+    #[inline]
+    pub fn is_normal(self) -> bool {
+        !(self.inf | self.nan | (self.significand == 0))
+    }
+
+    #[inline]
+    pub fn classify(self) -> FpCategory {
+        if self.nan {
+            FpCategory::Nan
+        } else if self.inf {
+            FpCategory::Infinite
+        } else if self.significand == 0 {
+            FpCategory::Zero
+        } else {
+            FpCategory::Normal
+        }
+    }
+
+    fn floor(self) -> Self {
+        todo!()
+    }
+
+    fn ceil(self) -> Self {
+        todo!()
+    }
+
+    fn round(self) -> Self {
+        todo!()
+    }
+
+    fn trunc(self) -> Self {
+        todo!()
+    }
+
+    fn fract(self) -> Self {
+        todo!()
+    }
+
+    pub fn abs(self) -> Self {
+        if self.nan {
+            Self::NAN
+        } else {
+            Self {
+                negative: false,
+                ..self
+            }
+        }
+    }
+
+    pub fn signum(self) -> Self {
+        if self.nan {
+            Self::NAN
+        } else if self.negative {
+            Self::ONE.neg()
+        } else {
+            Self::ONE
+        }
+    }
+
+    #[allow(unused)]
+    /// Returns true if the sign bit is positive.
+    /// Zero is also considered positive.
+    #[inline]
+    //#[must_use]
+    pub fn is_sign_positive(self) -> bool {
+        !self.negative
     }
 
     /// Returns true if the sign bit is negative.
     /// Zero is considered positive.
-    #[inline(always)]
+    #[inline]
     //#[must_use]
-    pub const fn is_sign_negative(&self) -> bool {
+    pub fn is_sign_negative(self) -> bool {
         self.negative
     }
 
-    /// Returns true if the sign bit is positive.
-    /// Zero is also considered positive.
-    #[inline(always)]
-    //#[must_use]
-    pub const fn is_sign_positive(&self) -> bool {
-        !self.negative
+    /// Fused multiply-add. Computes (self * a) + b with only one rounding error,
+    /// yielding a more accurate result than an unfused multiply-add.
+    fn mul_add(self, a: Self, b: Self) -> Self {
+        todo!()
     }
 
-    /// Creates an exact `SciDecimal` from a float.
+    /// Takes the reciprocoal (inverse) of the number, `1/x`.
+    #[inline]
+    pub fn recip(self) -> Self {
+        self.inv()
+    }
+
+    /// Raises the number to an integer power.
     ///
-    /// Currently this goes via `Decimal::try_from_f64()`.
-    pub fn from_f64(number: f64) -> Option<Self> {
-        let dec = Decimal::from_f64(number)?;
-        Some(dec.into())
+    /// # Panics
+    ///
+    /// This function panics if `n` is not within the range `-127 <= n <= 127`.
+    pub fn powi(self, n: i32) -> Self {
+        if !(-127..128).contains(&n) {
+            panic!()
+        }
+        let exact = if n.is_negative() {
+            self.powi(n.abs()).inv()
+        } else {
+            let number = self.significand_signed().pow(n.try_into().unwrap());
+            let exponent = self.exponent() * i16::try_from(n).unwrap();
+            Self::new(number, exponent)
+        };
+        if self.is_exact() {
+            exact
+        } else {
+            let uncertainty = (self.relative_uncertainty() * n.into()) * exact.abs();
+            exact.with_uncertainty(uncertainty)
+        }
     }
 
+    #[inline]
+    pub fn powf(self, n: Self) -> Self {
+        self.pow(n)
+    }
+
+    fn sqrt(self) -> Self {
+        todo!()
+    }
+
+    pub fn exp(self) -> Self {
+        let number = Decimal::try_from(self.number()).unwrap().exp();
+        if self.is_exact() {
+            Self::from(number)
+        } else {
+            let uncertainty = number.abs() * Decimal::try_from(self.uncertainty()).unwrap();
+            Self::from(number).with_uncertainty(uncertainty.into())
+        }
+    }
+
+    fn exp2(self) -> Self {
+        todo!()
+    }
+
+    pub fn ln(self) -> Self {
+        let number = Decimal::try_from(self.number()).unwrap().ln();
+        if self.is_exact() {
+            Self::from(number)
+        } else {
+            let uncertainty = Decimal::try_from(self.relative_uncertainty())
+                .unwrap()
+                .abs();
+            Self::from(number).with_uncertainty(uncertainty.into())
+        }
+    }
+
+    fn log(self, base: Self) -> Self {
+        todo!()
+    }
+
+    fn log2(self) -> Self {
+        todo!()
+    }
+
+    pub fn log10(self) -> Self {
+        let number = Decimal::try_from(self.number()).unwrap().log10();
+        if self.is_exact() {
+            Self::from(number)
+        } else {
+            let uncertainty = (Decimal::try_from(self.uncertainty()).unwrap()
+                / (Decimal::TEN.ln() * Decimal::try_from(self.number()).unwrap()))
+            .abs();
+            Self::from(number).with_uncertainty(uncertainty.into())
+        }
+    }
+
+    fn max(self, other: Self) -> Self {
+        todo!()
+    }
+
+    fn min(self, other: Self) -> Self {
+        todo!()
+    }
+
+    fn abs_sub(self, other: Self) -> Self {
+        todo!()
+    }
+
+    fn cbrt(self) -> Self {
+        todo!()
+    }
+
+    fn hypot(self, other: Self) -> Self {
+        todo!()
+    }
+
+    fn sin(self) -> Self {
+        todo!()
+    }
+
+    fn cos(self) -> Self {
+        todo!()
+    }
+
+    fn tan(self) -> Self {
+        todo!()
+    }
+
+    fn asin(self) -> Self {
+        todo!()
+    }
+
+    fn acos(self) -> Self {
+        todo!()
+    }
+
+    fn atan(self) -> Self {
+        todo!()
+    }
+
+    fn atan2(self, other: Self) -> Self {
+        todo!()
+    }
+
+    fn sin_cos(self) -> (Self, Self) {
+        todo!()
+    }
+
+    fn exp_m1(self) -> Self {
+        todo!()
+    }
+
+    fn ln_1p(self) -> Self {
+        todo!()
+    }
+
+    fn sinh(self) -> Self {
+        todo!()
+    }
+
+    fn cosh(self) -> Self {
+        todo!()
+    }
+
+    fn tanh(self) -> Self {
+        todo!()
+    }
+
+    fn asinh(self) -> Self {
+        todo!()
+    }
+
+    fn acosh(self) -> Self {
+        todo!()
+    }
+
+    fn atanh(self) -> Self {
+        todo!()
+    }
+
+    fn integer_decode(self) -> (u64, i16, i8) {
+        todo!()
+    }
+}
+
+impl PartialEq for SciDecimal {
+    fn eq(&self, other: &Self) -> bool {
+        // NaN is never equal to anything, even itself
+        if self.nan | other.nan {
+            false
+        // +0 == +0, but also +0 == -0
+        } else if self.is_zero() && other.is_zero() {
+            true
+        // Can't be equal if sign is different, so short circuit if so
+        } else if self.negative != other.negative {
+            false
+        // ∞ == ∞, -∞ == -∞, +∞ != -∞ but we already checked the signs are the same
+        } else if self.inf & other.inf {
+            true
+        } else if self.exponent == other.exponent {
+            self.significand == other.significand
+        // Might be the same value but to different precision
+        } else if self.significand.is_multiple_of(other.significand) {
+            let factor = self.significand / other.significand;
+            if factor.is_multiple_of(10) {
+                let order_diff = factor.ilog10();
+                self.exponent.0 + order_diff as u16 == other.exponent.0
+            } else {
+                false
+            }
+        } else if other.significand.is_multiple_of(self.significand) {
+            let factor = other.significand / self.significand;
+            if factor.is_multiple_of(10) {
+                let order_diff = factor.ilog10();
+                other.exponent.0 + order_diff as u16 == self.exponent.0
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+}
+
+impl PartialOrd for SciDecimal {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        use std::cmp::Ordering;
+
+        // NaN can't be compared
+        if self.nan | other.nan {
+            return None;
+        }
+        // Zeros are equal regardless of sign
+        if self.is_zero() && other.is_zero() {
+            return Some(Ordering::Equal);
+        }
+        // Different signs are easily ordered
+        if self.negative != other.negative {
+            return Some(if self.negative {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            });
+        }
+        // Infinities
+        match (self.inf, other.inf) {
+            (true, true) => {
+                // Must be same sign because we already compared signs
+                return Some(Ordering::Equal);
+            }
+            (true, false) => {
+                return Some(if self.negative {
+                    Ordering::Less
+                } else {
+                    Ordering::Greater
+                });
+            }
+            (false, true) => {
+                return Some(if other.negative {
+                    Ordering::Greater
+                } else {
+                    Ordering::Less
+                });
+            }
+            (false, false) => {}
+        }
+        // Same sign, both finite, neither is zero
+        let lhs_magnitude = self.precision_most_significant_fig();
+        let rhs_magnitude = other.precision_most_significant_fig();
+        let ordering = if lhs_magnitude != rhs_magnitude {
+            lhs_magnitude.cmp(&rhs_magnitude)
+        } else if self.exponent.0 == other.exponent.0 {
+            // Easy to compare them if the exponents are the same
+            self.significand.cmp(&other.significand)
+        } else {
+            // Otherwise have to set to same precision
+            let mut lhs_sig = self.significand as u128;
+            let mut rhs_sig = other.significand as u128;
+            let exp_diff = self.exponent() - other.exponent();
+            if exp_diff.is_positive() {
+                // e.g. self = 3e6, other = 3072e3
+                // Have to make self into 3000e3 to be able to compare
+                lhs_sig *= 10_u128.pow(exp_diff.unsigned_abs().into());
+                lhs_sig.cmp(&rhs_sig)
+            } else {
+                // e.g. self = 3072e3, other = 3e6
+                // Have to make other into 3000e3 to be able to compare
+                rhs_sig *= 10_u128.pow(exp_diff.unsigned_abs().into());
+                lhs_sig.cmp(&rhs_sig)
+            }
+        };
+        // If both are negative then the order is actually the reverse
+        Some(if self.negative {
+            ordering.reverse()
+        } else {
+            ordering
+        })
+    }
+}
+
+// Arithmetic with correlation
+impl SciDecimal {
     //pub fn add_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
     //where
     //    T: Into<Decimal>,
@@ -558,25 +1178,6 @@ impl SciDecimal {
     //    }
     //}
 
-    //#[inline]
-    //pub fn powd(self, rhs: Decimal) -> Self {
-    //    self.pow_with_correlation(rhs.into(), Decimal::ZERO)
-    //}
-
-    //#[inline]
-    //pub fn powfloat(self, rhs: f64) -> Self {
-    //    let rhs = Self::from_f64(rhs).unwrap();
-    //    self.pow_with_correlation(rhs, Decimal::ZERO)
-    //}
-
-    //#[inline]
-    //pub fn powfrac(self, rhs: Frac) -> Self {
-    //    let n: Decimal = (*rhs.numer()).into();
-    //    let d: Decimal = (*rhs.denom()).into();
-    //    let rhs = n / d;
-    //    self.powd(rhs)
-    //}
-
     //pub fn pow_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
     //where
     //    T: Into<Decimal>,
@@ -602,504 +1203,36 @@ impl SciDecimal {
     //}
 }
 
-// Precision, figures, and rounding
-impl SciDecimal {
-    /// Returns the scale of the last significant place.
-    ///
-    /// For example:
-    /// - 0.02 returns -2
-    /// - 0.020 returns -3
-    /// - 2 returns 0
-    /// - 200 returns 2 or 1 or 0, depending on the precision of the number
-    #[inline]
-    pub fn precision(&self) -> i16 {
-        self.exponent()
-    }
-
-    /// Returns the scale of the most significant place.
-    ///
-    /// For example:
-    /// - 0.02 returns -2
-    /// - 0.025 returns -2
-    /// - 0.020 returns -2
-    /// - 2 returns 0
-    /// - 321 returns 2
-    #[inline]
-    pub fn precision_most_significant_fig(&self) -> i16 {
-        self.exponent() + (i16::from(self.sigfigs()) - 1)
-    }
-
-    /// Returns the number of significant decimal digits in the significand.
-    /// 0 is considered to have 0 significant figures.
-    #[inline]
-    pub fn sigfigs(&self) -> u8 {
-        if let Some(log) = self.significand.checked_ilog10() {
-            log as u8 + 1
-        } else {
-            0
-        }
-    }
-
-    /// Removes significant figures from the significand until the desired number
-    /// is reached.
-    ///
-    /// Equivalent to rounding towards zero.
-    ///
-    /// The uncertainty of the `SciDecimal` is left unchanged.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if the `SciDecimal` already has fewer significant figures
-    /// than the requested number.
-    pub fn truncate(mut self, sf: u8) -> Self {
-        if self.sigfigs() < sf {
-            panic!()
-        };
-        while self.sigfigs() > sf {
-            self.significand /= 10;
-            // Exponent is now too small
-            self.exponent.0 += 1;
-            // Uncertainty is now too large
-            if !self.is_exact() {
-                self.uncertainty_scale += 1;
-            };
-        }
-        self
-    }
-
-    /// Increases the precision of the number by adding additional significant zeros
-    /// to the significand.
-    ///
-    /// This is equivalent to decreasing the exponent by `sf`.
-    ///
-    /// The uncertainty of the `SciDecimal` is left unchanged.
-    /// 
-    /// # Panics
-    /// 
-    /// This function panics if the increase would result in `significand`,
-    /// `exponent`, or `uncertainty_scale` exceeding their maximum values.
-    pub fn increase_precision(mut self, sf: u8) -> Self {
-        for _ in 0..sf {
-            self.significand *= 10;
-            // Exponent is now too large
-            self.exponent.0 -= 1;
-            // Uncertainty is now too small
-            if !self.is_exact() {
-                self.uncertainty_scale -= 1;
-            };
-        }
-        self
-    }
-
-    /// Increases the precision of the number by adding additional significant zeros
-    /// to the significand, without panicking.
-    ///
-    /// This is equivalent to decreasing the exponent by `sf`.
-    ///
-    /// The uncertainty of the `SciDecimal` is left unchanged.
-    pub fn checked_increase_precision(mut self, sf: u8) -> Option<Self> {
-        for _ in 0..sf {
-            self.significand = self.significand.checked_mul(10)?;
-            // Exponent is now too large
-            self.exponent.0 = self.exponent.0.checked_sub(1)?;
-            // Uncertainty is now too small
-            if !self.is_exact() {
-                self.uncertainty_scale = self.uncertainty_scale.checked_sub(1)?;
-            };
-        }
-        Some(self)
-    }
-}
-
-impl Num for SciDecimal {
-    type FromStrRadixErr = rust_decimal::Error;
-
-    fn from_str_radix(str: &str, radix: u32) -> Result<Self, rust_decimal::Error> {
-        // For now, just make use of the Decimal implementation
-        let dec = Decimal::from_str_radix(str, radix)?;
-        Ok(Self::from(dec))
-    }
-}
-
-impl Zero for SciDecimal {
-    #[inline]
-    fn zero() -> Self {
-        Self::ZERO
-    }
-
-    /// Returns true if the `SciDecimal` is equal to zero, regardless of any
-    /// uncertainty.
-    #[inline]
-    fn is_zero(&self) -> bool {
-        self.significand == 0
-    }
-}
-
-impl One for SciDecimal {
-    #[inline]
-    fn one() -> Self {
-        Self::ONE
-    }
-}
-
-// Methods that will belong to the Real trait if we implement it properly later
-// impl Real for SciDecimal {
-impl SciDecimal {
-    //fn min_value() -> Self {
-    //    todo!()
-    //}
-
-    //fn min_positive_value() -> Self {
-    //    todo!()
-    //}
-
-    //fn epsilon() -> Self {
-    //    todo!()
-    //}
-
-    //fn max_value() -> Self {
-    //    todo!()
-    //}
-
-    //fn floor(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn ceil(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn round(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn trunc(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn fract(self) -> Self {
-    //    todo!()
-    //}
-
-    pub fn abs(self) -> Self {
-        Self {
-            negative: false,
-            ..self
-        }
-    }
-
-    //fn signum(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn is_sign_positive(self) -> bool {
-    //    todo!()
-    //}
-
-    //fn is_sign_negative(self) -> bool {
-    //    todo!()
-    //}
-
-    //fn mul_add(self, a: Self, b: Self) -> Self {
-    //    todo!()
-    //}
-
-    //fn recip(self) -> Self {
-    //    todo!()
-    //}
-
-    /// Raise the `SciDecimal` to an integer power.
-    /// 
-    /// # Panics
-    /// 
-    /// This function panics if `n` is not within the range `-127 <= n <= 127`.
-    #[inline]
-    pub fn powi(self, n: i32) -> Self {
-        if !(-127..128).contains(&n) {
-            panic!()
-        }
-        let exact = if n.is_negative() {
-            self.powi(n.abs()).inv()
-        } else {
-            let number = self.significand_signed().pow(n.try_into().unwrap());
-            let exponent = self.exponent() * i16::try_from(n).unwrap();
-            Self::new(number, exponent)
-        };
-        if self.is_exact() {
-            exact
-        } else {
-            let uncertainty = (self.relative_uncertainty() * n) * exact.abs();
-            exact.with_uncertainty(uncertainty)
-        }
-    }
-
-    //fn powf(self, n: Self) -> Self {
-    //    todo!()
-    //}
-
-    pub fn sqrt(self) -> Self {
-        todo!()
-    }
-
-    pub fn exp(self) -> Self {
-        let number = Decimal::try_from(self.number()).unwrap().exp();
-        if self.is_exact() {
-            Self::from(number)
-        } else {
-            let uncertainty = number.abs() * Decimal::try_from(self.uncertainty()).unwrap();
-            Self::from(number).with_uncertainty(uncertainty.into())
-        }
-    }
-
-    //fn exp2(self) -> Self {
-    //    todo!()
-    //}
-
-    pub fn ln(self) -> Self {
-        let number = Decimal::try_from(self.number()).unwrap().ln();
-        if self.is_exact() {
-            Self::from(number)
-        } else {
-            let uncertainty = Decimal::try_from(self.relative_uncertainty())
-                .unwrap()
-                .abs();
-            Self::from(number).with_uncertainty(uncertainty.into())
-        }
-    }
-
-    //fn log(self, base: Self) -> Self {
-    //    todo!()
-    //}
-
-    //fn log2(self) -> Self {
-    //    todo!()
-    //}
-
-    pub fn log10(self) -> Self {
-        let number = Decimal::try_from(self.number()).unwrap().log10();
-        if self.is_exact() {
-            Self::from(number)
-        } else {
-            let uncertainty = (Decimal::try_from(self.uncertainty()).unwrap()
-                / (Decimal::TEN.ln() * Decimal::try_from(self.number()).unwrap()))
-            .abs();
-            Self::from(number).with_uncertainty(uncertainty.into())
-        }
-    }
-
-    //fn to_degrees(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn to_radians(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn max(self, other: Self) -> Self {
-    //    todo!()
-    //}
-
-    //fn min(self, other: Self) -> Self {
-    //    todo!()
-    //}
-
-    //fn abs_sub(self, other: Self) -> Self {
-    //    todo!()
-    //}
-
-    //fn cbrt(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn hypot(self, other: Self) -> Self {
-    //    todo!()
-    //}
-
-    //fn sin(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn cos(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn tan(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn asin(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn acos(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn atan(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn atan2(self, other: Self) -> Self {
-    //    todo!()
-    //}
-
-    //fn sin_cos(self) -> (Self, Self) {
-    //    todo!()
-    //}
-
-    //fn exp_m1(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn ln_1p(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn sinh(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn cosh(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn tanh(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn asinh(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn acosh(self) -> Self {
-    //    todo!()
-    //}
-
-    //fn atanh(self) -> Self {
-    //    todo!()
-    //}
-}
-
-impl From<Decimal> for SciDecimal {
-    /// Converts a `rust_decimal::Decimal` to a `SciDecimal`.
-    ///
-    /// A silent loss of precision will occur if the `Decimal` has a significand
-    /// wider than 64 bits.
-    /// If this is the case, `n` is first rounded to 16 significant figures using
-    /// `Decimal.round_sf()`; the rounding thus follows the
-    /// `rust_decimal::RoundingStrategy::MidpointNearestEven` strategy.
-    fn from(n: Decimal) -> Self {
-        let n = if n.unpack().hi == 0 {
-            n
-        } else {
-            n.round_sf(16).unwrap()
-        };
-        // `n.hi` should now always be 0 and the significand should fit into a `u64`
-        // `n.scale()` is max 28 anyway, should be max 18 at this point
-        Self::new(n.mantissa(), -(n.scale() as i16))
-    }
-}
-
-impl TryFrom<SciDecimal> for Decimal {
-    type Error = rust_decimal::Error;
-
-    /// Attempts to convert a `SciDecimal` into a `rust_decimal::Decimal`, dropping
-    /// any uncertainty.
-    ///
-    /// Fails if `n` has a positive exponent or an exponent lower than −28.
-    fn try_from(n: SciDecimal) -> Result<Decimal, rust_decimal::Error> {
-        if n.exponent.is_positive() {
-            Err(rust_decimal::Error::ConversionTo("Decimal".to_string()))
-        } else {
-            Decimal::try_from_i128_with_scale(
-                n.significand_signed(),
-                (BiasedExponent::EXPONENT_BIAS - n.exponent.0).into(),
-            )
-        }
-    }
-}
-
-impl From<SciDecimal> for BigDecimal {
-    /// Converts a `SciDecimal` into a `bigdecimal::BigDecimal`, dropping any uncertainty.
-    fn from(n: SciDecimal) -> Self {
-        BigDecimal::from_bigint(
-            BigInt::from_i128(n.significand_signed()).unwrap(),
-            -(n.exponent()) as i64,
-        )
-    }
-}
-
-macro_rules! impl_from_int {
-    ($T:ty) => {
-        impl From<$T> for SciDecimal {
-            fn from(t: $T) -> Self {
-                Self::new(t.into(), 0)
-            }
-        }
-    };
-}
-
-impl_from_int!(i8);
-impl_from_int!(i16);
-impl_from_int!(i32);
-impl_from_int!(i64);
-impl_from_int!(u8);
-impl_from_int!(u16);
-impl_from_int!(u32);
-impl_from_int!(u64);
-
-impl PartialEq for SciDecimal {
-    fn eq(&self, other: &Self) -> bool {
-        if self.is_zero() {
-            other.is_zero()
-        } else if self.is_sign_negative() != other.is_sign_negative() {
-            false
-        } else if self.exponent == other.exponent {
-            self.significand == other.significand
-        } else if self.significand.is_multiple_of(other.significand) {
-            let factor = self.significand / other.significand;
-            if factor.is_multiple_of(10) {
-                let order_diff = factor.ilog10();
-                self.exponent.0 + order_diff as u16 == other.exponent.0
-            } else {
-                false
-            }
-        } else if other.significand.is_multiple_of(self.significand) {
-            let factor = other.significand / self.significand;
-            if factor.is_multiple_of(10) {
-                let order_diff = factor.ilog10();
-                other.exponent.0 + order_diff as u16 == self.exponent.0
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    }
-}
-
-impl Eq for SciDecimal {}
-
-impl PartialOrd for SciDecimal {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for SciDecimal {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        Decimal::try_from(*self)
-            .unwrap()
-            .cmp(&Decimal::try_from(*other).unwrap())
-    }
-}
-
 impl Add for SciDecimal {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
         // TODO If significand would be too large for u64, just round it and
         // increase the exponent instead of panicking
+
+        // Handle NaN
+        if self.nan | rhs.nan {
+            return Self::NAN;
+        }
+        // Handle infinities
+        match (self.inf, rhs.inf) {
+            (true, true) => {
+                if self.negative == rhs.negative {
+                    // ∞ + ∞ = ∞, -∞ + -∞ = -∞
+                    return self;
+                } else {
+                    // ∞ - ∞ = NaN
+                    return Self::NAN;
+                }
+            }
+            (true, false) => {
+                return self;
+            }
+            (false, true) => {
+                return rhs;
+            }
+            (false, false) => {}
+        }
 
         let exact = match self.exponent.cmp(&rhs.exponent) {
             // In the simplest case, the exponents are the same
@@ -1161,7 +1294,40 @@ impl Mul for SciDecimal {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self {
+        // Handle NaN
+        if self.nan | rhs.nan {
+            return Self::NAN;
+        }
         let negative = self.negative ^ rhs.negative;
+        // Handle infinities
+        match (self.inf, rhs.inf) {
+            (true, true) => {
+                if negative {
+                    return Self::NEG_INFINITY;
+                } else {
+                    return Self::INFINITY;
+                }
+            }
+            (true, false) => {
+                if rhs.is_zero() {
+                    return Self::NAN;
+                } else if negative {
+                    return Self::NEG_INFINITY;
+                } else {
+                    return Self::INFINITY;
+                }
+            }
+            (false, true) => {
+                if self.is_zero() {
+                    return Self::NAN;
+                } else if negative {
+                    return Self::NEG_INFINITY;
+                } else {
+                    return Self::INFINITY;
+                }
+            }
+            (false, false) => {}
+        }
         let (significand, exponent) = match self.significand.checked_mul(rhs.significand) {
             Some(s) => (s, self.exponent() + rhs.exponent()),
             None => {
@@ -1189,6 +1355,8 @@ impl Mul for SciDecimal {
         let exact = Self {
             uncertainty: 0,
             uncertainty_scale: 0,
+            nan: false,
+            inf: false,
             negative,
             exponent: exponent.into(),
             significand,
@@ -1196,10 +1364,9 @@ impl Mul for SciDecimal {
         if self.is_exact() && rhs.is_exact() {
             exact
         } else {
-            let uncertainty = (self.relative_uncertainty().powi(2)
-                + rhs.relative_uncertainty().powi(2))
-            .sqrt()
-                * exact.abs();
+            let uncertainty =
+                (self.relative_uncertainty().powi(2) + rhs.relative_uncertainty().powi(2)).sqrt()
+                    * exact.abs();
             exact.with_uncertainty(uncertainty)
         }
     }
@@ -1217,7 +1384,46 @@ impl Div for SciDecimal {
     type Output = Self;
 
     fn div(self, rhs: Self) -> Self {
+        // Handle NaN
+        if self.nan | rhs.nan {
+            return Self::NAN;
+        }
         let negative = self.negative ^ rhs.negative;
+        // Handle infinities
+        match (self.inf, rhs.inf) {
+            (true, true) => {
+                // ∞/∞ is undefined
+                return Self::NAN;
+            }
+            (true, false) => {
+                // ∞/n = ∞ for all n, including 0
+                if negative {
+                    return Self::NEG_INFINITY;
+                } else {
+                    return Self::INFINITY;
+                }
+            }
+            (false, true) => {
+                // n/∞ = 0 for all n, including 0
+                if negative {
+                    return Self::NEG_ZERO;
+                } else {
+                    return Self::ZERO;
+                }
+            }
+            (false, false) => {}
+        }
+        // Handle zeros
+        if rhs.is_zero() {
+            if self.is_zero() {
+                // 0/0 is undefined
+                return Self::NAN;
+            } else if negative {
+                return Self::NEG_INFINITY;
+            } else {
+                return Self::INFINITY;
+            }
+        }
         // Increase precision of the numerator until the denominator goes into
         // it an exact number of times, or until the maximum precision is
         // reached
@@ -1233,8 +1439,8 @@ impl Div for SciDecimal {
                 Some(new) => lhs = new,
                 None => {
                     max_precision_reached = true;
-                    break
-                },
+                    break;
+                }
             }
         }
         let significand = if max_precision_reached {
@@ -1247,6 +1453,8 @@ impl Div for SciDecimal {
         let exact = Self {
             uncertainty: 0,
             uncertainty_scale: 0,
+            nan: false,
+            inf: false,
             negative,
             exponent: exponent.into(),
             significand,
@@ -1254,10 +1462,9 @@ impl Div for SciDecimal {
         if self.is_exact() && rhs.is_exact() {
             exact
         } else {
-            let uncertainty = (lhs.relative_uncertainty().powi(2)
-                + rhs.relative_uncertainty().powi(2))
-            .sqrt()
-                * exact.abs();
+            let uncertainty =
+                (lhs.relative_uncertainty().powi(2) + rhs.relative_uncertainty().powi(2)).sqrt()
+                    * exact.abs();
             exact.with_uncertainty(uncertainty)
         }
     }
@@ -1279,6 +1486,23 @@ impl Rem for SciDecimal {
     /// NOTE: Uncertainty propagation is not implemented for this method,
     /// and the returned result is exact.
     fn rem(self, rhs: Self) -> Self {
+        // Handle NaN
+        if self.nan | rhs.nan {
+            return Self::NAN;
+        }
+        // Handle infinities
+        if self.inf {
+            // Can't find remainder of infinity
+            return Self::NAN;
+        } else if rhs.inf {
+            return self;
+        }
+        // Handle zeros
+        if rhs.is_zero() {
+            // n % 0 is undefined just like n / 0
+            return Self::NAN;
+        }
+        // TODO implement natively, not via Decimal
         let number =
             Decimal::try_from(self.number()).unwrap() % Decimal::try_from(rhs.number()).unwrap();
         // Don't calculate uncertainty as the remainder function is discontinuous,
@@ -1295,9 +1519,7 @@ impl Rem for &SciDecimal {
     /// WARNING: Uncertainty propagation is not yet implemented for this method,
     /// and the returned result will be exact.
     fn rem(self, rhs: Self) -> SciDecimal {
-        let number =
-            Decimal::try_from(self.number()).unwrap() % Decimal::try_from(rhs.number()).unwrap();
-        number.into()
+        *self % *rhs
     }
 }
 
@@ -1305,9 +1527,9 @@ impl Pow<Self> for SciDecimal {
     type Output = Self;
 
     /// Raise the `SciDecimal` to a `SciDecimal` power.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// This function panics if `rhs` is not within the range `-127 <= n <= 127`.
     fn pow(self, rhs: Self) -> Self {
         if rhs > SciDecimal::from(127) || rhs < SciDecimal::from(-127) {
@@ -1315,7 +1537,10 @@ impl Pow<Self> for SciDecimal {
         }
         if rhs.is_exact() && rhs.exponent.is_zero() {
             let n = rhs.significand_signed();
-            self.powi(n.try_into().expect("n has already been checked and should fit into even an i8"))
+            self.powi(
+                n.try_into()
+                    .expect("n has already been checked and should fit into even an i8"),
+            )
         } else {
             todo!()
         }
@@ -1335,7 +1560,10 @@ impl Neg for SciDecimal {
 
     #[inline]
     fn neg(self) -> Self {
-        Self { negative: !self.negative, ..self }
+        Self {
+            negative: !self.negative,
+            ..self
+        }
     }
 }
 
@@ -1344,7 +1572,10 @@ impl Neg for &SciDecimal {
 
     #[inline]
     fn neg(self) -> SciDecimal {
-        SciDecimal { negative: !self.negative, ..*self }
+        SciDecimal {
+            negative: !self.negative,
+            ..*self
+        }
     }
 }
 
@@ -1365,92 +1596,6 @@ impl Inv for &SciDecimal {
         SciDecimal::ONE / *self
     }
 }
-
-macro_rules! impl_arithmetic_int {
-    ($t:ty) => {
-        impl Add<$t> for SciDecimal {
-            type Output = SciDecimal;
-
-            fn add(self, rhs: $t) -> SciDecimal {
-                self + SciDecimal::from(rhs)
-            }
-        }
-
-        impl Add<SciDecimal> for $t {
-            type Output = SciDecimal;
-
-            fn add(self, rhs: SciDecimal) -> SciDecimal {
-                SciDecimal::from(self) + rhs
-            }
-        }
-
-        impl Sub<$t> for SciDecimal {
-            type Output = Self;
-
-            fn sub(self, rhs: $t) -> SciDecimal {
-                self - SciDecimal::from(rhs)
-            }
-        }
-
-        impl Sub<SciDecimal> for $t {
-            type Output = SciDecimal;
-
-            fn sub(self, rhs: SciDecimal) -> SciDecimal {
-                SciDecimal::from(self) - rhs
-            }
-        }
-
-        impl Mul<$t> for SciDecimal {
-            type Output = Self;
-
-            fn mul(self, rhs: $t) -> SciDecimal {
-                self * SciDecimal::from(rhs)
-            }
-        }
-
-        impl Mul<SciDecimal> for $t {
-            type Output = SciDecimal;
-
-            fn mul(self, rhs: SciDecimal) -> SciDecimal {
-                SciDecimal::from(self) * rhs
-            }
-        }
-
-        impl Div<$t> for SciDecimal {
-            type Output = Self;
-
-            fn div(self, rhs: $t) -> SciDecimal {
-                self / SciDecimal::from(rhs)
-            }
-        }
-
-        impl Div<SciDecimal> for $t {
-            type Output = SciDecimal;
-
-            fn div(self, rhs: SciDecimal) -> SciDecimal {
-                SciDecimal::from(self) / rhs
-            }
-        }
-    };
-}
-
-impl_arithmetic_int!(i8);
-impl_arithmetic_int!(i16);
-impl_arithmetic_int!(i32);
-impl_arithmetic_int!(i64);
-impl_arithmetic_int!(u8);
-impl_arithmetic_int!(u16);
-impl_arithmetic_int!(u32);
-impl_arithmetic_int!(u64);
-
-//impl Debug for SciDecimal {
-//    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//        f.debug_struct("SciDecimal")
-//            .field("number", &self.number())
-//            .field("uncertainty", &self.uncertainty())
-//            .finish()
-//    }
-//}
 
 impl fmt::Display for SciDecimal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -1476,7 +1621,9 @@ impl fmt::Display for SciDecimal {
         // before the decimal point, so that the precision is indicated:
         // - 81700 with 3 sf = 8.17e4 = (817, 2) => "8.17e4"
         // - 81700 with 5 sf = 8.1700e4 = (81700, 0) => "81700"
-        if self.precision() <= 0 && self.precision() >= -5 && self.precision_most_significant_fig() <= 4
+        if self.precision() <= 0
+            && self.precision() >= -5
+            && self.precision_most_significant_fig() <= 4
         {
             // Integers
             if self.precision() == 0 {
@@ -1517,13 +1664,13 @@ impl FromStr for SciDecimal {
     /// Parses a string and attempts to create a corresponding `SciDecimal`.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         //let re = Regex::new(r"^(-?\d+(?:[.,]\d+)?)(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
-        let re = Regex::new(r"^(-)?(\d+)?(?:[.,](\d+))?(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
+        let re =
+            Regex::new(r"^(-)?(\d+)?(?:[.,](\d+))?(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
         let caps = re.captures(s).ok_or(SciNumError::Parse(s.into()))?;
         // Example given with "6.971e-7"
         let negative = caps.get(1).is_some(); // false
         let mut significand_str = String::new();
         let int = caps.get(2).map_or("", |m| m.as_str()); // "6"
-        //.ok_or(SciNumError::Parse(s.into()))?.as_str();
         let frac = caps.get(3).map_or("", |m| m.as_str()); // "971"
         let frac_places = frac.len(); // 3
         // Avoid adding leading zeros to the significand
@@ -1554,6 +1701,8 @@ impl FromStr for SciDecimal {
         Ok(Self {
             uncertainty,
             uncertainty_scale: 0,
+            nan: false,
+            inf: false,
             negative,
             exponent: exponent.into(),
             significand,
@@ -1561,50 +1710,90 @@ impl FromStr for SciDecimal {
     }
 }
 
-#[allow(unused_macros)]
+#[macro_export]
 macro_rules! sci {
     ($s:expr) => {
         SciDecimal::from_str(stringify!($s)).unwrap()
     };
 }
 
-impl SciDecimal {
-    /// A constant representing 0.
-    pub const ZERO: SciDecimal = SciDecimal {
-        negative: false,
-        exponent: BiasedExponent::ZERO,
-        uncertainty_scale: 0,
-        uncertainty: 0,
-        significand: 0,
-    };
+impl From<Decimal> for SciDecimal {
+    /// Converts a `rust_decimal::Decimal` to a `SciDecimal`.
+    ///
+    /// A silent loss of precision will occur if the `Decimal` has a significand
+    /// wider than 64 bits.
+    /// If this is the case, `n` is first rounded to 16 significant figures using
+    /// `Decimal.round_sf()`; the rounding thus follows the
+    /// `rust_decimal::RoundingStrategy::MidpointNearestEven` strategy.
+    fn from(n: Decimal) -> Self {
+        let n = if n.mantissa() < SciDecimal::MAX_SIGNIFICAND_SIGNED.into() {
+            n
+        } else {
+            n.round_sf(16).unwrap()
+        };
+        // The significand should now fit into a `u64`
+        // `n.scale()` is max 28 anyway, should be max 18 at this point
+        Self::new(n.mantissa() as i64, -(n.scale() as i16))
+    }
+}
 
-    /// A constant representing 1.
-    pub const ONE: SciDecimal = SciDecimal {
-        negative: false,
-        exponent: BiasedExponent::ZERO,
-        uncertainty_scale: 0,
-        uncertainty: 0,
-        significand: 1,
-    };
+impl TryFrom<SciDecimal> for Decimal {
+    type Error = rust_decimal::Error;
 
-    /// The highest supported number.
-    pub const MAX: SciDecimal = SciDecimal {
-        negative: false,
-        exponent: BiasedExponent::MAX,
-        uncertainty_scale: 0,
-        uncertainty: 0,
-        significand: u64::MAX,
-    };
+    /// Attempts to convert a `SciDecimal` into a `rust_decimal::Decimal`, dropping
+    /// any uncertainty.
+    ///
+    /// Fails if `n` has a positive exponent or an exponent lower than −28.
+    fn try_from(n: SciDecimal) -> Result<Decimal, rust_decimal::Error> {
+        if n.exponent.is_positive() {
+            Err(rust_decimal::Error::ConversionTo("Decimal".to_string()))
+        } else {
+            Decimal::try_from_i128_with_scale(
+                n.significand_signed().into(),
+                (BiasedExponent::EXPONENT_BIAS - n.exponent.0).into(),
+            )
+        }
+    }
+}
 
-    /// The lowest supported number.
-    pub const MIN: SciDecimal = SciDecimal {
-        negative: true,
-        exponent: BiasedExponent::ZERO,
-        uncertainty_scale: 0,
-        uncertainty: 0,
-        significand: u64::MAX,
+impl From<BigDecimal> for SciDecimal {
+    /// Converts a `bigdecimal::BigDecimal` to a `SciDecimal`.
+    ///
+    /// The conversion currently goes via the string representation.
+    ///
+    /// A silent loss of precision will occur if the `BigDecimal` has a significand
+    /// with more than 16 significant figures.
+    fn from(n: BigDecimal) -> Self {
+        n.to_scientific_notation().parse().unwrap()
+    }
+}
+
+impl From<SciDecimal> for BigDecimal {
+    /// Converts a `SciDecimal` into a `bigdecimal::BigDecimal`, dropping any uncertainty.
+    fn from(n: SciDecimal) -> Self {
+        BigDecimal::from_bigint(
+            BigInt::from_i64(n.significand_signed()).unwrap(),
+            -(n.exponent()) as i64,
+        )
+    }
+}
+
+macro_rules! impl_from_int {
+    ($T:ty) => {
+        impl From<$T> for SciDecimal {
+            fn from(t: $T) -> Self {
+                Self::new(t.into(), 0)
+            }
+        }
     };
 }
+
+impl_from_int!(i8);
+impl_from_int!(i16);
+impl_from_int!(i32);
+impl_from_int!(u8);
+impl_from_int!(u16);
+impl_from_int!(u32);
 
 #[cfg(test)]
 mod tests {
@@ -1646,7 +1835,6 @@ mod tests {
         assert_eq!(n1, SciDecimal::new(672, -1));
 
         let n2 = SciDecimal::from_scientific_parts(67, 1, 0, 0, 0); // 67.0
-        dbg!(n2);
         assert_eq!(n2.to_string(), "67.0");
         assert_eq!(n2, SciDecimal::new(670, -1));
 
@@ -1681,18 +1869,44 @@ mod tests {
 
     #[test]
     fn new_largest_significand() {
-        let _n = SciDecimal::new(u64::MAX.into(), 0);
+        let _n = SciDecimal::new(SciDecimal::MAX_SIGNIFICAND_SIGNED, 0);
     }
 
     #[test]
     fn new_largest_negative_significand() {
-        let _n = SciDecimal::new(-i128::from(u64::MAX), 0);
+        let _n = SciDecimal::new(SciDecimal::MIN_SIGNIFICAND_SIGNED, 0);
     }
 
     #[test]
     #[should_panic]
     fn new_invalid_significand() {
-        let _n = SciDecimal::new(i128::from(u64::MAX) + 1, 0);
+        let _n = SciDecimal::new(SciDecimal::MAX_SIGNIFICAND_SIGNED + 1, 0);
+    }
+
+    #[test]
+    fn nan() {
+        let n = SciDecimal::nan();
+        assert!(n.is_nan());
+        assert_ne!(n, SciDecimal::NAN); // Characteristic of NaN
+        assert!(!n.is_normal());
+        assert!(!n.is_zero());
+        assert!(n.number().is_nan());
+        assert!(n.uncertainty().is_nan());
+    }
+
+    #[test]
+    fn infinities() {
+        let i = SciDecimal::infinity();
+        let n = SciDecimal::neg_infinity();
+        assert!(i.is_infinite());
+        assert!(n.is_infinite());
+        assert!(!i.is_finite());
+        assert!(!n.is_finite());
+        assert!(!i.is_zero());
+        assert!(!n.is_zero());
+        assert!(!i.is_normal());
+        assert!(!n.is_normal());
+        assert_ne!(i, n);
     }
 
     #[test]
@@ -1733,7 +1947,10 @@ mod tests {
         assert_eq!(BiasedExponent::bias_exponent(0), BiasedExponent::ZERO);
         assert_eq!(BiasedExponent::bias_exponent(i16::MIN), BiasedExponent(0));
         assert_eq!(BiasedExponent::bias_exponent(i16::MIN), BiasedExponent::MIN);
-        assert_eq!(BiasedExponent::bias_exponent(i16::MAX), BiasedExponent(u16::MAX));
+        assert_eq!(
+            BiasedExponent::bias_exponent(i16::MAX),
+            BiasedExponent(u16::MAX)
+        );
         assert_eq!(BiasedExponent::bias_exponent(i16::MAX), BiasedExponent::MAX);
         assert_eq!(BiasedExponent::bias_exponent(1), BiasedExponent(32769));
         assert_eq!(BiasedExponent::bias_exponent(-1), BiasedExponent(32767));
@@ -1880,11 +2097,62 @@ mod tests {
     }
 
     #[test]
-    fn add_with_int() {
-        let n1 = SciDecimal::new(20, 0);
-        let n2 = 30;
-        let result: SciDecimal = n1 + n2;
-        assert_eq!(result.number(), sci!(50));
+    fn add_special() {
+        let p = sci!(2.5e5);
+        let n = sci!(-2.5e5);
+        let nan = SciDecimal::NAN;
+        let inf = SciDecimal::INFINITY;
+        let ninf = SciDecimal::NEG_INFINITY;
+        let zero = SciDecimal::ZERO;
+        let nzero = SciDecimal::NEG_ZERO;
+        // NaN
+        assert!((nan    + nan   ).is_nan());
+        assert!((nan    + p     ).is_nan());
+        assert!((p      + nan   ).is_nan());
+        assert!((nan    + n     ).is_nan());
+        assert!((n      + nan   ).is_nan());
+        assert!((nan    + inf   ).is_nan());
+        assert!((inf    + nan   ).is_nan());
+        assert!((nan    + ninf  ).is_nan());
+        assert!((ninf   + nan   ).is_nan());
+        assert!((nan    + zero  ).is_nan());
+        assert!((zero   + nan   ).is_nan());
+        assert!((nan    + nzero ).is_nan());
+        assert!((nzero  + nan   ).is_nan());
+        // Infinities
+        assert_eq!(inf      + inf   , inf);
+        assert_eq!(ninf     + ninf  , ninf);
+        assert!((inf    + ninf  ).is_nan());
+        assert!((ninf   + inf   ).is_nan());
+        assert_eq!(inf      + p     , inf);
+        assert_eq!(inf      + n     , inf);
+        assert_eq!(ninf     + p     , ninf);
+        assert_eq!(ninf     + n     , ninf);
+        assert_eq!(p        + inf   , inf);
+        assert_eq!(n        + inf   , inf);
+        assert_eq!(p        + ninf  , ninf);
+        assert_eq!(n        + ninf  , ninf);
+        assert_eq!(inf      + zero  , inf);
+        assert_eq!(inf      + nzero , inf);
+        assert_eq!(ninf     + zero  , ninf);
+        assert_eq!(ninf     + nzero , ninf);
+        assert_eq!(zero     + inf   , inf);
+        assert_eq!(nzero    + inf   , inf);
+        assert_eq!(zero     + ninf  , ninf);
+        assert_eq!(nzero    + ninf  , ninf);
+        // Zeros
+        assert_eq!(zero + zero, zero);
+        assert_eq!(nzero + nzero, nzero);
+        assert_eq!(zero + nzero, zero);
+        assert_eq!(nzero + zero, zero);
+        assert_eq!(zero + p, p);
+        assert_eq!(nzero + p, p);
+        assert_eq!(zero + n, n);
+        assert_eq!(nzero + n, n);
+        assert_eq!(p + zero, p);
+        assert_eq!(p + nzero, p);
+        assert_eq!(n + zero, n);
+        assert_eq!(n + nzero, n);
     }
 
     #[test]
@@ -1907,14 +2175,6 @@ mod tests {
     }
 
     #[test]
-    fn sub_with_int() {
-        let n1 = SciDecimal::new(20, 0);
-        let n2 = 30;
-        let result: SciDecimal = n1 - n2;
-        assert_eq!(result, sci!(-10));
-    }
-
-    #[test]
     fn mul_exact() {
         let n1 = SciDecimal::new(20, 0);
         let n2 = SciDecimal::new(30, 0);
@@ -1922,7 +2182,7 @@ mod tests {
     }
 
     #[test]
-    fn mul_with_uncertainty() {    
+    fn mul_with_uncertainty() {
         let n1 = SciDecimal::new_with_uncertainty(20, 2, 0);
         let n2 = SciDecimal::new_with_uncertainty(30, 5, 0);
         let result = n1 * n2;
@@ -1934,14 +2194,6 @@ mod tests {
         let ft = SciDecimal::from(dec!(0.3048));
         let square_ft = ft * ft;
         assert_eq!(square_ft, sci!(0.09290304));
-    }
-
-    #[test]
-    fn mul_with_int() {
-        let n1 = SciDecimal::new(20, 0);
-        let n2 = 30;
-        let result: SciDecimal = n1 * n2;
-        assert_eq!(result, sci!(600));
     }
 
     #[test]
@@ -1966,11 +2218,10 @@ mod tests {
             (SciDecimal::new(1, 0) / SciDecimal::new(3, 0)),
             SciDecimal::new(3333333333333333333, -19),
         );
-        // Fails as result is currently truncated rather than rounded
-        //assert_eq!(
-        //    (SciDecimal::new(1, 0) / SciDecimal::new(9, 0)),
-        //    SciDecimal::new(1111111111111111112, -19),
-        //);
+        assert_eq!(
+            (SciDecimal::new(1, 0) / SciDecimal::new(9, 0)),
+            SciDecimal::new(1111111111111111111, -19),
+        );
     }
 
     #[test]
@@ -1988,14 +2239,6 @@ mod tests {
             Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
             dec!(0.129576708774340).round_dp(5)
         );
-    }
-
-    #[test]
-    fn div_with_int() {
-        let n1 = SciDecimal::new(60, 0);
-        let n2 = 30;
-        let result: SciDecimal = n1 / n2;
-        assert_eq!(result, SciDecimal::from(Decimal::TWO));
     }
 
     #[test]
@@ -2109,9 +2352,7 @@ mod tests {
         assert_eq!(SciDecimal::from(dec!(0.00001)).to_string(), "0.00001");
         assert_eq!(SciDecimal::new(325, -4).to_string(), "0.0325");
         assert_eq!(SciDecimal::new(-325, -4).to_string(), "-0.0325");
-        dbg!("Reached here");
         assert_eq!(SciDecimal::new(85130, -3).to_string(), "85.130");
-        //dbg!(sci!(25691.29854));
         assert_eq!(sci!(25691.29854).to_string(), "25691.29854");
         // If the maximum number of places (5) is exceeded, use scientific notation
         assert_eq!(SciDecimal::new(1295891, 0).to_string(), "1.295891e6");
@@ -2130,7 +2371,10 @@ mod tests {
         assert_eq!(SciDecimal::new(81700, 0).to_string(), "81700");
 
         // Check uncertainty formatting
-        assert_eq!(SciDecimal::new_with_uncertainty(20, 2, 0).to_string(), "20(2)");
+        assert_eq!(
+            SciDecimal::new_with_uncertainty(20, 2, 0).to_string(),
+            "20(2)"
+        );
         // TODO: More uncertainty display tests
     }
 
@@ -2139,30 +2383,60 @@ mod tests {
         // Integer
         assert_eq!(SciDecimal::from_str("42").unwrap(), SciDecimal::new(42, 0));
         // Decimal
-        assert_eq!(SciDecimal::from_str("0.0859").unwrap(), SciDecimal::new(859, -4));
+        assert_eq!(
+            SciDecimal::from_str("0.0859").unwrap(),
+            SciDecimal::new(859, -4)
+        );
         // Decimal without integral part before decimal point
-        assert_eq!(SciDecimal::from_str(".0859").unwrap(), SciDecimal::new(859, -4));
+        assert_eq!(
+            SciDecimal::from_str(".0859").unwrap(),
+            SciDecimal::new(859, -4)
+        );
         // Negative decimal
-        assert_eq!(SciDecimal::from_str("-3.14").unwrap(), SciDecimal::new(-314, -2));
+        assert_eq!(
+            SciDecimal::from_str("-3.14").unwrap(),
+            SciDecimal::new(-314, -2)
+        );
         // Scientific notation
-        assert_eq!(SciDecimal::from_str("1.5e8").unwrap(), SciDecimal::new(15, 7));
+        assert_eq!(
+            SciDecimal::from_str("1.5e8").unwrap(),
+            SciDecimal::new(15, 7)
+        );
         // Scientific notation with negative exponent
-        assert_eq!(SciDecimal::from_str("2e-5").unwrap(), SciDecimal::new(2, -5));
+        assert_eq!(
+            SciDecimal::from_str("2e-5").unwrap(),
+            SciDecimal::new(2, -5)
+        );
         // Negative number with positive exponent
-        assert_eq!(SciDecimal::from_str("-6.022e6").unwrap(), SciDecimal::new(-6022, 3));
+        assert_eq!(
+            SciDecimal::from_str("-6.022e6").unwrap(),
+            SciDecimal::new(-6022, 3)
+        );
         // Large exponents
-        assert_eq!(SciDecimal::from_str("1.5e18").unwrap(), SciDecimal::new(15, 17));
+        assert_eq!(
+            SciDecimal::from_str("1.5e18").unwrap(),
+            SciDecimal::new(15, 17)
+        );
         assert_eq!(
             SciDecimal::from_str("-6.022e23").unwrap(),
             SciDecimal::new(-6022, 20)
         );
         // Capital E for exponent
-        assert_eq!(SciDecimal::from_str("1.5E8").unwrap(), SciDecimal::new(15, 7));
+        assert_eq!(
+            SciDecimal::from_str("1.5E8").unwrap(),
+            SciDecimal::new(15, 7)
+        );
         // 16 significant figures must always be fine
-        assert_eq!(SciDecimal::from_str("0.5293040185492948").unwrap(), SciDecimal::new(5293040185492948, -16));
+        assert_eq!(
+            SciDecimal::from_str("0.5293040185492948").unwrap(),
+            SciDecimal::new(5293040185492948, -16)
+        );
         // Excess precision should be silently truncated to 16 sf
         // TODO: maybe in future should be rounded rather than truncated?
-        assert_eq!(SciDecimal::from_str("0.529304018549294841").unwrap(), SciDecimal::new(5293040185492948, -16));
+        assert_eq!(
+            SciDecimal::from_str("0.529304018549294841").unwrap(),
+            SciDecimal::new(5293040185492948, -16)
+        );
         // Make sure incorrectly formatted strings fail
         assert!(SciDecimal::from_str("not a number").is_err());
         assert!(SciDecimal::from_str("x.482").is_err());
@@ -2175,7 +2449,10 @@ mod tests {
         // Integer
         assert_eq!(sci!(42), SciDecimal::new(42, 0));
         // Negative float
-        assert_eq!(sci!(-3.14), SciDecimal::from_scientific_parts(-3, 0, 14, 0, 0));
+        assert_eq!(
+            sci!(-3.14),
+            SciDecimal::from_scientific_parts(-3, 0, 14, 0, 0)
+        );
         // Scientific notation
         assert_eq!(sci!(1.5e8), SciDecimal::new(15, 7));
         // Scientific notation with large exponent
