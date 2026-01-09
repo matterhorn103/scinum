@@ -1492,11 +1492,20 @@ impl Inv for &SciDecimal {
 
 impl fmt::Display for SciDecimal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Handle NaN
+        if self.nan{
+            return write!(f, "NaN");
+        }
+        // Get sign character
         let sign = if self.negative {
             String::from("-")
         } else {
             String::new()
         };
+        // Handle infinities
+        if self.inf {
+            return write!(f, "{}inf", sign);
+        }
         let significand = self.significand;
         let uncertainty = if self.is_exact() {
             String::new()
@@ -2486,6 +2495,13 @@ mod tests {
 
     #[test]
     fn display() {
+        // NaN and infinity should match the native `f64`
+        assert_eq!(SciDecimal::NAN.to_string(), f64::NAN.to_string()); // "NaN"
+        assert_eq!(SciDecimal::INFINITY.to_string(), f64::INFINITY.to_string()); // "inf"
+        assert_eq!(SciDecimal::NEG_INFINITY.to_string(), f64::NEG_INFINITY.to_string()); // "-inf"
+        // As should +/- zero, as long as there's no uncertainty
+        assert_eq!(SciDecimal::ZERO.to_string(), (0.0).to_string()); // "0"
+        assert_eq!(SciDecimal::NEG_ZERO.to_string(), (-0.0).to_string()); // "-0"
         // Numbers with up to five places either side of the decimal point should
         // be displayed using normal notation
         // Integers should display without any decimal point at all
