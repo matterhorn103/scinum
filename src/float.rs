@@ -4,11 +4,11 @@
 use std::{
     fmt::Display,
     num::ParseFloatError,
-    ops::{Add, Div, Mul, Rem, Sub, Neg},
+    ops::{Add, Div, Mul, Neg, Rem, Sub},
     str::FromStr,
 };
 
-use num_traits::{Inv, Pow, Num, One, Zero, FloatConst};
+use num_traits::{FloatConst, Inv, Num, One, Pow, Zero};
 
 use crate::{SciDecimal, SciNum, error::SciNumError};
 
@@ -18,9 +18,7 @@ pub struct SciFloat {
     uncertainty: f64,
 }
 
-
 impl SciFloat {
-
     pub fn new(number: f64) -> Self {
         Self {
             number,
@@ -44,7 +42,7 @@ impl SciFloat {
     pub fn truncate(mut self, sig_figs: u32) -> Self {
         // If integer
         let scale = 10_f64.powi(sig_figs as i32);
-        let mut value = self.number();
+        let mut value = self.number;
         if value.fract() != 0.0 {
             self.number = (value * scale).trunc() / scale;
             return self;
@@ -171,7 +169,10 @@ impl Zero for SciFloat {
 
 impl One for SciFloat {
     fn one() -> Self {
-        Self { number: 1.0, uncertainty: 0.0 }
+        Self {
+            number: 1.0,
+            uncertainty: 0.0,
+        }
     }
 }
 
@@ -217,7 +218,7 @@ impl SciFloat {
     pub fn abs(self) -> Self {
         Self {
             number: self.number.abs(),
-            uncertainty: self.uncertainty
+            uncertainty: self.uncertainty,
         }
     }
 
@@ -244,12 +245,12 @@ impl SciFloat {
     /// Raise the `SciFloat` to an integer power.
     #[inline]
     pub fn powi(self, n: i32) -> Self {
-        let number = self.number().powi(n);
+        let number = self.number.powi(n);
 
         if self.is_exact() {
             SciFloat::new(number)
         } else {
-            let uncertainty = (self.uncertainty() * (n as f64) * number.abs()) / self.number();
+            let uncertainty = (self.uncertainty * (n as f64) * number.abs()) / self.number;
             SciFloat::new_with_uncertainty(number, uncertainty)
         }
     }
@@ -259,15 +260,21 @@ impl SciFloat {
     //}
 
     pub fn sqrt(self) -> Self {
-        let number: f64 = self.number().sqrt();
-        let uncertainty: f64 = (number * self.uncertainty()) / (2.0 * self.number());
-        Self { number, uncertainty }
+        let number: f64 = self.number.sqrt();
+        let uncertainty: f64 = (number * self.uncertainty) / (2.0 * self.number);
+        Self {
+            number,
+            uncertainty,
+        }
     }
 
     pub fn exp(self) -> Self {
-        let number = f64::E().powf(self.number()).into();
-        let uncertainty = number * self.uncertainty();
-        Self { number, uncertainty }
+        let number = f64::E().powf(self.number).into();
+        let uncertainty = number * self.uncertainty;
+        Self {
+            number,
+            uncertainty,
+        }
     }
 
     //fn exp2(self) -> Self {
@@ -275,7 +282,7 @@ impl SciFloat {
     //}
 
     pub fn ln(self) -> Self {
-        let number = self.number().ln();
+        let number = self.number.ln();
         if self.is_exact() {
             Self::from(number)
         } else {
@@ -293,69 +300,92 @@ impl SciFloat {
     //}
 
     pub fn log10(self) -> Self {
-        let number = self.number().log10();
+        let number = self.number.log10();
         if self.is_exact() {
             Self::from(number)
         } else {
-            let uncertainty = self.uncertainty() / ((10.0_f64).ln() * self.number()).abs();
+            let uncertainty = self.uncertainty / ((10.0_f64).ln() * self.number).abs();
             Self::new_with_uncertainty(number, uncertainty)
         }
     }
 
     pub fn to_degrees(self) -> Self {
-        let number = self.number() * (180.0 / f64::PI());
-        let uncertainty = self.uncertainty() * (180.0 / f64::PI());
-        Self { number, uncertainty }
+        let number = self.number * (180.0 / f64::PI());
+        let uncertainty = self.uncertainty * (180.0 / f64::PI());
+        Self {
+            number,
+            uncertainty,
+        }
     }
 
     pub fn to_radians(self) -> Self {
-        let number = self.number() * (f64::PI() / 180.0);
-        let uncertainty = self.uncertainty() * (f64::PI() / 180.0);
-        Self { number, uncertainty }
+        let number = self.number * (f64::PI() / 180.0);
+        let uncertainty = self.uncertainty * (f64::PI() / 180.0);
+        Self {
+            number,
+            uncertainty,
+        }
     }
 
     pub fn max(self, other: Self) -> Self {
         match self > other {
             true => self,
-            false => other
+            false => other,
         }
     }
 
     pub fn min(self, other: Self) -> Self {
         match self < other {
             true => self,
-            false => other
+            false => other,
         }
     }
 
     pub fn cbrt(self) -> Self {
-        let number: f64 = self.number().cbrt();
-        let uncertainty: f64 = (number * self.uncertainty()) / (3.0 * self.number());
-        Self { number, uncertainty }
+        let number: f64 = self.number.cbrt();
+        let uncertainty: f64 = (number * self.uncertainty) / (3.0 * self.number);
+        Self {
+            number,
+            uncertainty,
+        }
     }
 
     pub fn hypot(self, other: Self) -> Self {
-        let number = (self.number().powi(2) + other.number().powi(2)).sqrt();
-        let uncertainty = ((self.number() * self.uncertainty()).abs() + (other.number() * other.uncertainty()).abs()) / number;
-        Self { number, uncertainty }
+        let number = self.number.hypot(other.number);
+        let uncertainty = ((self.number * self.uncertainty).abs()
+            + (other.number * other.uncertainty).abs())
+            / number;
+        Self {
+            number,
+            uncertainty,
+        }
     }
 
     pub fn sin(self) -> Self {
-        let number = self.number().sin();
-        let uncertainty = (self.number().cos() * self.uncertainty()).abs();
-        Self { number, uncertainty }
+        let number = self.number.sin();
+        let uncertainty = (self.number.cos() * self.uncertainty).abs();
+        Self {
+            number,
+            uncertainty,
+        }
     }
 
     pub fn cos(self) -> Self {
-        let number = self.number().cos();
-        let uncertainty = (self.number().sin() * self.uncertainty()).abs();
-        Self { number, uncertainty }
+        let number = self.number.cos();
+        let uncertainty = (self.number.sin() * self.uncertainty).abs();
+        Self {
+            number,
+            uncertainty,
+        }
     }
 
     pub fn tan(self) -> Self {
-        let number = self.number().tan();
-        let uncertainty: f64 = ((1_f64 / (self.number().cos().powi(2))) * self.uncertainty()).abs();
-        Self { number, uncertainty }
+        let number = self.number.tan();
+        let uncertainty: f64 = ((1_f64 / (self.number.cos().powi(2))) * self.uncertainty).abs();
+        Self {
+            number,
+            uncertainty,
+        }
     }
 
     //fn asin(self) -> Self {
@@ -503,14 +533,15 @@ impl Pow<Self> for SciFloat {
     /// Raise the `SciFloat` to a `SciFloat` power.
     /// Currently missing correlated uncertainties.
     fn pow(self, rhs: Self) -> Self {
-        let number: f64 = self.number().pow(rhs.number());
+        let number: f64 = self.number.pow(rhs.number);
         let uncertainty: f64 = number
-            * (
-                (self.uncertainty() * (rhs.number() / self.number()))
-                + (rhs.uncertainty() * self.number().ln())
-            );
+            * ((self.uncertainty * (rhs.number / self.number))
+                + (rhs.uncertainty * self.number.ln()));
 
-        Self { number, uncertainty }
+        Self {
+            number,
+            uncertainty,
+        }
     }
 }
 
@@ -527,7 +558,10 @@ impl Neg for SciFloat {
 
     #[inline]
     fn neg(self) -> Self {
-        Self { number: -self.number, ..self }
+        Self {
+            number: -self.number,
+            ..self
+        }
     }
 }
 
@@ -536,7 +570,10 @@ impl Neg for &SciFloat {
 
     #[inline]
     fn neg(self) -> SciFloat {
-        SciFloat { number: -self.number, ..*self }
+        SciFloat {
+            number: -self.number,
+            ..*self
+        }
     }
 }
 
@@ -783,10 +820,7 @@ mod tests {
         let n2 = SciFloat::new_with_uncertainty(30.0, 5.0);
         let result = n2 / n1;
         assert_eq!(result, SciFloat::new(1.5));
-        assert_eq!(
-            result.uncertainty(),
-            0.291547594742265
-        );
+        assert_eq!(result.uncertainty(), 0.291547594742265);
     }
 
     #[test]
