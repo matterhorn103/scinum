@@ -10,7 +10,7 @@ use std::{
 };
 
 use bigdecimal::{BigDecimal, num_bigint::BigInt};
-use num_traits::{Float, FromPrimitive, Inv, Num, One, Pow, Zero};
+use num_traits::{FromPrimitive, Inv, Num, One, Pow, Zero};
 use regex::Regex;
 use rust_decimal::{Decimal, MathematicalOps};
 
@@ -455,6 +455,9 @@ impl SciDecimal {
     /// - 200 returns 2 or 1 or 0, depending on the precision of the number
     #[inline]
     pub fn precision(&self) -> i16 {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         self.exponent()
     }
 
@@ -471,6 +474,9 @@ impl SciDecimal {
     /// - 321 returns 2
     #[inline]
     pub fn precision_most_significant_fig(&self) -> i16 {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         self.exponent() + (i16::from(self.sigfigs()) - 1)
     }
 
@@ -478,6 +484,9 @@ impl SciDecimal {
     /// 0 is considered to have 0 significant figures.
     #[inline]
     pub fn sigfigs(&self) -> u8 {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         if let Some(log) = self.significand.checked_ilog10() {
             log as u8 + 1
         } else {
@@ -497,6 +506,9 @@ impl SciDecimal {
     /// This function panics if the `SciDecimal` already has fewer significant figures
     /// than the requested number.
     pub fn truncate(mut self, sf: u8) -> Self {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         if self.sigfigs() < sf {
             panic!()
         };
@@ -524,6 +536,9 @@ impl SciDecimal {
     /// This function panics if the increase would result in `significand`,
     /// `exponent`, or `uncertainty_scale` exceeding their maximum values.
     pub fn increase_precision(mut self, sf: u8) -> Self {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         for _ in 0..sf {
             self.significand *= 10;
             // Exponent is now too large
@@ -543,6 +558,9 @@ impl SciDecimal {
     ///
     /// The uncertainty of the `SciDecimal` is left unchanged.
     pub fn checked_increase_precision(mut self, sf: u8) -> Option<Self> {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         for _ in 0..sf {
             self.significand = self.significand.checked_mul(10)?;
             // Exponent is now too large
@@ -592,7 +610,7 @@ impl SciNum for SciDecimal {
     /// Returns the absolute uncertainty as an exact `SciDecimal`.
     ///
     /// The uncertainty is always positive.
-    /// 
+    ///
     /// An infinity always has an uncertainty of (positive) infinity, and `NaN`
     /// always has an uncertainty of `NaN`.
     #[inline]
@@ -638,6 +656,9 @@ impl SciNum for SciDecimal {
     /// assert_eq!(n, SciDecimal::new_with_uncertainty(251, 3, -3));
     #[inline]
     fn with_uncertainty(mut self, uncertainty: Self) -> Self {
+        if !uncertainty.is_finite() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         let narrowed_uncertainty = if uncertainty.significand > u32::MAX.into() {
             uncertainty.truncate(9);
             uncertainty
@@ -659,6 +680,9 @@ impl SciNum for SciDecimal {
     /// Returns true if the `SciDecimal` has an uncertainty of zero.
     #[inline]
     fn is_exact(&self) -> bool {
+        if !self.is_finite() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         self.uncertainty == 0
     }
 }
@@ -675,6 +699,7 @@ impl Num for SciDecimal {
 
 // Methods that will belong to the Float trait when we implement it properly later
 //impl Float for SciDecimal {
+#[allow(unused)]
 impl SciDecimal {
     #[inline]
     pub fn nan() -> Self {
@@ -782,12 +807,14 @@ impl SciDecimal {
         }
     }
 
-    #[allow(unused)]
     /// Returns true if the sign bit is positive.
     /// Zero is also considered positive.
     #[inline]
     //#[must_use]
     pub fn is_sign_positive(self) -> bool {
+        if self.is_nan() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         !self.negative
     }
 
@@ -796,6 +823,9 @@ impl SciDecimal {
     #[inline]
     //#[must_use]
     pub fn is_sign_negative(self) -> bool {
+        if self.is_nan() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         self.negative
     }
 
@@ -817,6 +847,9 @@ impl SciDecimal {
     ///
     /// This function panics if `n` is not within the range `-127 <= n <= 127`.
     pub fn powi(self, n: i32) -> Self {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         if !(-127..128).contains(&n) {
             panic!()
         }
@@ -845,6 +878,9 @@ impl SciDecimal {
     }
 
     pub fn exp(self) -> Self {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         let number = Decimal::try_from(self.number()).unwrap().exp();
         if self.is_exact() {
             Self::from(number)
@@ -859,6 +895,9 @@ impl SciDecimal {
     }
 
     pub fn ln(self) -> Self {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         let number = Decimal::try_from(self.number()).unwrap().ln();
         if self.is_exact() {
             Self::from(number)
@@ -879,6 +918,9 @@ impl SciDecimal {
     }
 
     pub fn log10(self) -> Self {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         let number = Decimal::try_from(self.number()).unwrap().log10();
         if self.is_exact() {
             Self::from(number)
@@ -1092,115 +1134,6 @@ impl PartialOrd for SciDecimal {
             ordering
         })
     }
-}
-
-// Arithmetic with correlation
-impl SciDecimal {
-    //pub fn add_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    //where
-    //    T: Into<Decimal>,
-    //{
-    //    let number = Decimal::try_from(self.number()).unwrap() + Decimal::try_from(rhs.number()).unwrap();
-    //    if self.is_exact() && rhs.is_exact() {
-    //        Self::from(number)
-    //    } else {
-    //        let sigma_ab = correlation.into()
-    //            * Decimal::try_from(self.uncertainty()).unwrap()
-    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
-    //        let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
-    //            + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2))
-    //            + (Decimal::TWO * sigma_ab))
-    //            .sqrt()
-    //            .unwrap();
-    //        Self::from(number).with_uncertainty(uncertainty.into())
-    //    }
-    //}
-
-    //pub fn sub_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    //where
-    //    T: Into<Decimal>,
-    //{
-    //    let number = Decimal::try_from(self.number()).unwrap() - Decimal::try_from(rhs.number()).unwrap();
-    //    if self.is_exact() && rhs.is_exact() {
-    //        Self::from(number)
-    //    } else {
-    //        let sigma_ab = correlation.into()
-    //            * Decimal::try_from(self.uncertainty()).unwrap()
-    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
-    //        let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
-    //            + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2))
-    //            - (Decimal::TWO * sigma_ab))
-    //            .sqrt()
-    //            .unwrap();
-    //        Self::from(number).with_uncertainty(uncertainty.into())
-    //    }
-    //}
-
-    //pub fn mul_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    //where
-    //    T: Into<Decimal>,
-    //{
-    //    let number = Decimal::try_from(self.number()).unwrap() * Decimal::try_from(rhs.number()).unwrap();
-    //    if self.is_exact() && rhs.is_exact() {
-    //        Self::from(number)
-    //    } else {
-    //        let sigma_ab = correlation.into()
-    //            * Decimal::try_from(self.uncertainty()).unwrap()
-    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
-    //        let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap().powu(2))
-    //            + (Decimal::try_from(rhs.relative_uncertainty()).unwrap().powu(2))
-    //            + (Decimal::TWO * sigma_ab / number))
-    //            .sqrt()
-    //            .unwrap()
-    //            * number.abs();
-    //        Self::from(number).with_uncertainty(uncertainty.into())
-    //    }
-    //}
-
-    //pub fn div_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    //where
-    //    T: Into<Decimal>,
-    //{
-    //    let number = Decimal::try_from(self.number()).unwrap() / Decimal::try_from(rhs.number()).unwrap();
-    //    if self.is_exact() && rhs.is_exact() {
-    //       Self::from(number)
-    //    } else {
-    //        let sigma_ab = correlation.into()
-    //            * Decimal::try_from(self.uncertainty()).unwrap()
-    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
-    //        let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap().powu(2))
-    //            + (Decimal::try_from(rhs.relative_uncertainty()).unwrap().powu(2))
-    //            - (Decimal::TWO * sigma_ab / number))
-    //            .sqrt()
-    //            .unwrap()
-    //            * number.abs();
-    //        Self::from(number).with_uncertainty(uncertainty.into())
-    //    }
-    //}
-
-    //pub fn pow_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    //where
-    //    T: Into<Decimal>,
-    //{
-    //    let number = Decimal::try_from(self.number()).unwrap().powd(Decimal::try_from(rhs.number()).unwrap());
-    //    if self.is_exact() && rhs.is_exact() {
-    //        Self::from(number)
-    //    } else {
-    //        let sigma_ab = correlation.into()
-    //            * Decimal::try_from(self.uncertainty()).unwrap()
-    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
-    //        let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap() * Decimal::try_from(rhs.number()).unwrap()).powu(2)
-    //            + (Decimal::try_from(self.number()).unwrap().ln() * Decimal::try_from(rhs.uncertainty()).unwrap()).powu(2)
-    //            + (Decimal::TWO
-    //                * ((Decimal::try_from(self.number()).unwrap().ln() * Decimal::try_from(rhs.number()).unwrap())
-    //                    / Decimal::try_from(self.number()).unwrap())
-    //                * sigma_ab))
-    //            .sqrt()
-    //            .unwrap()
-    //            * number.abs();
-    //        Self::from(number).with_uncertainty(uncertainty.into())
-    //    }
-    //}
 }
 
 impl Add for SciDecimal {
@@ -1503,6 +1436,8 @@ impl Rem for SciDecimal {
             return Self::NAN;
         }
         // TODO implement natively, not via Decimal
+        dbg!(&self);
+        dbg!(self.to_string());
         let number =
             Decimal::try_from(self.number()).unwrap() % Decimal::try_from(rhs.number()).unwrap();
         // Don't calculate uncertainty as the remainder function is discontinuous,
@@ -1532,6 +1467,9 @@ impl Pow<Self> for SciDecimal {
     ///
     /// This function panics if `rhs` is not within the range `-127 <= n <= 127`.
     fn pow(self, rhs: Self) -> Self {
+        if !(self.is_normal() & rhs.is_normal()) {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         if rhs > SciDecimal::from(127) || rhs < SciDecimal::from(-127) {
             panic!()
         }
@@ -1599,11 +1537,20 @@ impl Inv for &SciDecimal {
 
 impl fmt::Display for SciDecimal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Handle NaN
+        if self.nan{
+            return write!(f, "NaN");
+        }
+        // Get sign character
         let sign = if self.negative {
             String::from("-")
         } else {
             String::new()
         };
+        // Handle infinities
+        if self.inf {
+            return write!(f, "{}inf", sign);
+        }
         let significand = self.significand;
         let uncertainty = if self.is_exact() {
             String::new()
@@ -1663,7 +1610,7 @@ impl FromStr for SciDecimal {
 
     /// Parses a string and attempts to create a corresponding `SciDecimal`.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        //let re = Regex::new(r"^(-?\d+(?:[.,]\d+)?)(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
+        // TODO Support special values
         let re =
             Regex::new(r"^(-)?(\d+)?(?:[.,](\d+))?(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
         let caps = re.captures(s).ok_or(SciNumError::Parse(s.into()))?;
@@ -1742,20 +1689,25 @@ impl TryFrom<SciDecimal> for Decimal {
 
     /// Attempts to convert a `SciDecimal` into a `rust_decimal::Decimal`, dropping
     /// any uncertainty.
-    ///
-    /// Fails if `n` has a positive exponent or an exponent lower than −28.
+    /// 
+    /// Currently goes via the string representation using `Decimal::from_str_exact()`.
+    /// 
+    /// Any number not representable by `Decimal` (generally because the number
+    /// is outside of the range 10<sup>−28</sup> to 10<sup>28</sup>) will lead to
+    /// this function failing.
     fn try_from(n: SciDecimal) -> Result<Decimal, rust_decimal::Error> {
-        if n.exponent.is_positive() {
-            Err(rust_decimal::Error::ConversionTo("Decimal".to_string()))
+        let s = n.number().to_string();
+        dbg!(&s);
+        // Check if in scientific notation or not
+        if s.contains(|x: char| x.is_ascii_alphabetic()) {
+            Decimal::from_scientific(&s)
         } else {
-            Decimal::try_from_i128_with_scale(
-                n.significand_signed().into(),
-                (BiasedExponent::EXPONENT_BIAS - n.exponent.0).into(),
-            )
+            Decimal::from_str_exact(&s)
         }
     }
 }
 
+// TODO: tests
 impl From<BigDecimal> for SciDecimal {
     /// Converts a `bigdecimal::BigDecimal` to a `SciDecimal`.
     ///
@@ -1768,9 +1720,13 @@ impl From<BigDecimal> for SciDecimal {
     }
 }
 
+// TODO: tests
 impl From<SciDecimal> for BigDecimal {
     /// Converts a `SciDecimal` into a `bigdecimal::BigDecimal`, dropping any uncertainty.
     fn from(n: SciDecimal) -> Self {
+        if !n.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         BigDecimal::from_bigint(
             BigInt::from_i64(n.significand_signed()).unwrap(),
             -(n.exponent()) as i64,
@@ -1817,15 +1773,6 @@ mod tests {
         let n = SciDecimal::new_with_uncertainty(20, 2, 0);
         assert_eq!(n.number(), SciDecimal::from(20));
         assert_eq!(n.uncertainty(), SciDecimal::new(2, 0));
-    }
-
-    #[test]
-    fn new_from_dec() {
-        let n = SciDecimal::from(dec!(20));
-        assert_eq!(n.number(), SciDecimal::new(20, 0));
-        assert_eq!(n.number(), SciDecimal::from(dec!(20)));
-        assert_eq!(n.uncertainty(), SciDecimal::new(0, 0));
-        assert_eq!(n.uncertainty(), SciDecimal::from(dec!(0)));
     }
 
     #[test]
@@ -1910,9 +1857,20 @@ mod tests {
     }
 
     #[test]
+    fn from_decimal() {
+        let n = SciDecimal::from(dec!(20));
+        assert_eq!(n.number(), SciDecimal::new(20, 0));
+        assert_eq!(n.number(), SciDecimal::from(dec!(20)));
+        assert_eq!(n.uncertainty(), SciDecimal::new(0, 0));
+        assert_eq!(n.uncertainty(), SciDecimal::from(dec!(0)));
+    }
+
+    #[test]
     fn into_decimal() {
-        let n = SciDecimal::new_with_uncertainty(20, 2, 0);
-        assert_eq!(Decimal::try_from(n).unwrap(), dec!(20));
+        let n1 = SciDecimal::new_with_uncertainty(20, 2, 0);
+        assert_eq!(Decimal::try_from(n1).unwrap(), dec!(20));
+        let n2 = sci!(2.5e5);
+        assert_eq!(Decimal::try_from(n2).unwrap(), dec!(2.5e5));
     }
 
     #[test]
@@ -2097,6 +2055,7 @@ mod tests {
     }
 
     #[test]
+    #[rustfmt::skip]
     fn add_special() {
         let p = sci!(2.5e5);
         let n = sci!(-2.5e5);
@@ -2105,54 +2064,57 @@ mod tests {
         let ninf = SciDecimal::NEG_INFINITY;
         let zero = SciDecimal::ZERO;
         let nzero = SciDecimal::NEG_ZERO;
+        // Check positive zero is always created when summing to zero
+        assert_eq!( (p      + n     ),  zero);
+        assert_eq!( (n      + p     ),  zero);
         // NaN
-        assert!((nan    + nan   ).is_nan());
-        assert!((nan    + p     ).is_nan());
-        assert!((p      + nan   ).is_nan());
-        assert!((nan    + n     ).is_nan());
-        assert!((n      + nan   ).is_nan());
-        assert!((nan    + inf   ).is_nan());
-        assert!((inf    + nan   ).is_nan());
-        assert!((nan    + ninf  ).is_nan());
-        assert!((ninf   + nan   ).is_nan());
-        assert!((nan    + zero  ).is_nan());
-        assert!((zero   + nan   ).is_nan());
-        assert!((nan    + nzero ).is_nan());
-        assert!((nzero  + nan   ).is_nan());
+        assert!(    (nan    + nan   )   .is_nan());
+        assert!(    (nan    + p     )   .is_nan());
+        assert!(    (nan    + n     )   .is_nan());
+        assert!(    (nan    + inf   )   .is_nan());
+        assert!(    (nan    + ninf  )   .is_nan());
+        assert!(    (nan    + zero  )   .is_nan());
+        assert!(    (nan    + nzero )   .is_nan());
+        assert!(    (p      + nan   )   .is_nan());
+        assert!(    (n      + nan   )   .is_nan());
+        assert!(    (inf    + nan   )   .is_nan());
+        assert!(    (ninf   + nan   )   .is_nan());
+        assert!(    (zero   + nan   )   .is_nan());
+        assert!(    (nzero  + nan   )   .is_nan());
         // Infinities
-        assert_eq!(inf      + inf   , inf);
-        assert_eq!(ninf     + ninf  , ninf);
-        assert!((inf    + ninf  ).is_nan());
-        assert!((ninf   + inf   ).is_nan());
-        assert_eq!(inf      + p     , inf);
-        assert_eq!(inf      + n     , inf);
-        assert_eq!(ninf     + p     , ninf);
-        assert_eq!(ninf     + n     , ninf);
-        assert_eq!(p        + inf   , inf);
-        assert_eq!(n        + inf   , inf);
-        assert_eq!(p        + ninf  , ninf);
-        assert_eq!(n        + ninf  , ninf);
-        assert_eq!(inf      + zero  , inf);
-        assert_eq!(inf      + nzero , inf);
-        assert_eq!(ninf     + zero  , ninf);
-        assert_eq!(ninf     + nzero , ninf);
-        assert_eq!(zero     + inf   , inf);
-        assert_eq!(nzero    + inf   , inf);
-        assert_eq!(zero     + ninf  , ninf);
-        assert_eq!(nzero    + ninf  , ninf);
+        assert_eq!( (inf    + inf   ),  inf);
+        assert_eq!( (ninf   + ninf  ),  ninf);
+        assert!(    (inf    + ninf  )   .is_nan());
+        assert!(    (ninf   + inf   )   .is_nan());
+        assert_eq!( (inf    + p     ),  inf);
+        assert_eq!( (inf    + n     ),  inf);
+        assert_eq!( (inf    + zero  ),  inf);
+        assert_eq!( (inf    + nzero ),  inf);
+        assert_eq!( (p      + inf   ),  inf);
+        assert_eq!( (n      + inf   ),  inf);
+        assert_eq!( (zero   + inf   ),  inf);
+        assert_eq!( (nzero  + inf   ),  inf);
+        assert_eq!( (ninf   + p     ),  ninf);
+        assert_eq!( (ninf   + n     ),  ninf);
+        assert_eq!( (ninf   + zero  ),  ninf);
+        assert_eq!( (ninf   + nzero ),  ninf);
+        assert_eq!( (p      + ninf  ),  ninf);
+        assert_eq!( (n      + ninf  ),  ninf);
+        assert_eq!( (zero   + ninf  ),  ninf);
+        assert_eq!( (nzero  + ninf  ),  ninf);
         // Zeros
-        assert_eq!(zero + zero, zero);
-        assert_eq!(nzero + nzero, nzero);
-        assert_eq!(zero + nzero, zero);
-        assert_eq!(nzero + zero, zero);
-        assert_eq!(zero + p, p);
-        assert_eq!(nzero + p, p);
-        assert_eq!(zero + n, n);
-        assert_eq!(nzero + n, n);
-        assert_eq!(p + zero, p);
-        assert_eq!(p + nzero, p);
-        assert_eq!(n + zero, n);
-        assert_eq!(n + nzero, n);
+        assert_eq!( (zero   + zero  ),  zero);
+        assert_eq!( (nzero  + nzero ),  nzero);
+        assert_eq!( (zero   + nzero ),  zero);
+        assert_eq!( (nzero  + zero  ),  zero);
+        assert_eq!( (zero   + p     ),  p);
+        assert_eq!( (zero   + n     ),  n);
+        assert_eq!( (p      + zero  ),  p);
+        assert_eq!( (n      + zero  ),  n);
+        assert_eq!( (nzero  + p     ),  p);
+        assert_eq!( (nzero  + n     ),  n);
+        assert_eq!( (p      + nzero ),  p);
+        assert_eq!( (n      + nzero ),  n);
     }
 
     #[test]
@@ -2175,6 +2137,69 @@ mod tests {
     }
 
     #[test]
+    #[rustfmt::skip]
+    fn sub_special() {
+        let p = sci!(2.5e5);
+        let n = sci!(-2.5e5);
+        let nan = SciDecimal::NAN;
+        let inf = SciDecimal::INFINITY;
+        let ninf = SciDecimal::NEG_INFINITY;
+        let zero = SciDecimal::ZERO;
+        let nzero = SciDecimal::NEG_ZERO;
+        // Check positive zero is always created when summing to zero
+        assert_eq!( (p      - p     ),  zero);
+        assert_eq!( (n      - n     ),  zero);
+        // NaN
+        assert!(    (nan    - nan   )   .is_nan());
+        assert!(    (nan    - p     )   .is_nan());
+        assert!(    (nan    - n     )   .is_nan());
+        assert!(    (nan    - inf   )   .is_nan());
+        assert!(    (nan    - ninf  )   .is_nan());
+        assert!(    (nan    - zero  )   .is_nan());
+        assert!(    (nan    - nzero )   .is_nan());
+        assert!(    (p      - nan   )   .is_nan());
+        assert!(    (n      - nan   )   .is_nan());
+        assert!(    (inf    - nan   )   .is_nan());
+        assert!(    (ninf   - nan   )   .is_nan());
+        assert!(    (zero   - nan   )   .is_nan());
+        assert!(    (nzero  - nan   )   .is_nan());
+        // Infinities
+        assert!(    (inf    - inf   )   .is_nan());
+        assert!(    (ninf   - ninf  )   .is_nan());
+        assert_eq!( (inf    - ninf  ),  inf);
+        assert_eq!( (ninf   - inf   ),  ninf);
+        assert_eq!( (inf    - p     ),  inf);
+        assert_eq!( (inf    - n     ),  inf);
+        assert_eq!( (inf    - zero  ),  inf);
+        assert_eq!( (inf    - nzero ),  inf);
+        assert_eq!( (p      - inf   ),  ninf);
+        assert_eq!( (n      - inf   ),  ninf);
+        assert_eq!( (zero   - inf   ),  ninf);
+        assert_eq!( (nzero  - inf   ),  ninf);
+        assert_eq!( (ninf   - p     ),  ninf);
+        assert_eq!( (ninf   - n     ),  ninf);
+        assert_eq!( (ninf   - zero  ),  ninf);
+        assert_eq!( (ninf   - nzero ),  ninf);
+        assert_eq!( (p      - ninf  ),  inf);
+        assert_eq!( (n      - ninf  ),  inf);
+        assert_eq!( (zero   - ninf  ),  inf);
+        assert_eq!( (nzero  - ninf  ),  inf);
+        // Zeros
+        assert_eq!( (zero   - zero  ),  zero);
+        assert_eq!( (nzero  - nzero ),  zero);
+        assert_eq!( (zero   - nzero ),  zero);
+        assert_eq!( (nzero  - zero  ),  nzero);
+        assert_eq!( (zero   - p     ),  n);
+        assert_eq!( (zero   - n     ),  p);
+        assert_eq!( (p      - zero  ),  p);
+        assert_eq!( (n      - zero  ),  n);
+        assert_eq!( (nzero  - p     ),  n);
+        assert_eq!( (nzero  - n     ),  p);
+        assert_eq!( (p      - nzero ),  p);
+        assert_eq!( (n      - nzero ),  n);
+    }
+
+    #[test]
     fn mul_exact() {
         let n1 = SciDecimal::new(20, 0);
         let n2 = SciDecimal::new(30, 0);
@@ -2194,6 +2219,66 @@ mod tests {
         let ft = SciDecimal::from(dec!(0.3048));
         let square_ft = ft * ft;
         assert_eq!(square_ft, sci!(0.09290304));
+    }
+
+    #[test]
+    #[rustfmt::skip]
+    fn mul_special() {
+        let p = sci!(2.5e5);
+        let n = sci!(-2.5e5);
+        let nan = SciDecimal::NAN;
+        let inf = SciDecimal::INFINITY;
+        let ninf = SciDecimal::NEG_INFINITY;
+        let zero = SciDecimal::ZERO;
+        let nzero = SciDecimal::NEG_ZERO;
+        // NaN
+        assert!(    (nan    * nan   )   .is_nan());
+        assert!(    (nan    * p     )   .is_nan());
+        assert!(    (nan    * n     )   .is_nan());
+        assert!(    (nan    * inf   )   .is_nan());
+        assert!(    (nan    * ninf  )   .is_nan());
+        assert!(    (nan    * zero  )   .is_nan());
+        assert!(    (nan    * nzero )   .is_nan());
+        assert!(    (p      * nan   )   .is_nan());
+        assert!(    (n      * nan   )   .is_nan());
+        assert!(    (inf    * nan   )   .is_nan());
+        assert!(    (ninf   * nan   )   .is_nan());
+        assert!(    (zero   * nan   )   .is_nan());
+        assert!(    (nzero  * nan   )   .is_nan());
+        // Infinities
+        assert_eq!( (inf    * inf   ),  inf);
+        assert_eq!( (ninf   * ninf  ),  inf);
+        assert_eq!( (inf    * ninf  ),  ninf);
+        assert_eq!( (ninf   * inf   ),  ninf);
+        assert_eq!( (inf    * p     ),  inf);
+        assert_eq!( (inf    * n     ),  ninf);
+        assert!(    (inf    * zero  )   .is_nan());
+        assert!(    (inf    * nzero )   .is_nan());
+        assert_eq!( (p      * inf   ),  inf);
+        assert_eq!( (n      * inf   ),  ninf);
+        assert!(    (zero   * inf   )   .is_nan());
+        assert!(    (nzero  * inf   )   .is_nan());
+        assert_eq!( (ninf   * p     ),  ninf);
+        assert_eq!( (ninf   * n     ),  inf);
+        assert!(    (ninf   * zero  )   .is_nan());
+        assert!(    (ninf   * nzero )   .is_nan());
+        assert_eq!( (p      * ninf  ),  ninf);
+        assert_eq!( (n      * ninf  ),  inf);
+        assert!(    (zero   * ninf  )   .is_nan());
+        assert!(    (nzero  * ninf  )   .is_nan());
+        // Zeros
+        assert_eq!( (zero   * zero  ),  zero);
+        assert_eq!( (nzero  * nzero ),  zero);
+        assert_eq!( (zero   * nzero ),  nzero);
+        assert_eq!( (nzero  * zero  ),  nzero);
+        assert_eq!( (zero   * p     ),  zero);
+        assert_eq!( (zero   * n     ),  nzero);
+        assert_eq!( (p      * zero  ),  zero);
+        assert_eq!( (n      * zero  ),  nzero);
+        assert_eq!( (nzero  * p     ),  nzero);
+        assert_eq!( (nzero  * n     ),  zero);
+        assert_eq!( (p      * nzero ),  nzero);
+        assert_eq!( (n      * nzero ),  zero);
     }
 
     #[test]
@@ -2251,6 +2336,131 @@ mod tests {
             Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
             dec!(0.2915475947422).round_dp(5)
         );
+    }
+
+    #[test]
+    #[rustfmt::skip]
+    fn div_special() {
+        let p = sci!(2.5e5);
+        let n = sci!(-2.5e5);
+        let nan = SciDecimal::NAN;
+        let inf = SciDecimal::INFINITY;
+        let ninf = SciDecimal::NEG_INFINITY;
+        let zero = SciDecimal::ZERO;
+        let nzero = SciDecimal::NEG_ZERO;
+        // NaN
+        assert!(    (nan    / nan   )   .is_nan());
+        assert!(    (nan    / p     )   .is_nan());
+        assert!(    (nan    / n     )   .is_nan());
+        assert!(    (nan    / inf   )   .is_nan());
+        assert!(    (nan    / ninf  )   .is_nan());
+        assert!(    (nan    / zero  )   .is_nan());
+        assert!(    (nan    / nzero )   .is_nan());
+        assert!(    (p      / nan   )   .is_nan());
+        assert!(    (n      / nan   )   .is_nan());
+        assert!(    (inf    / nan   )   .is_nan());
+        assert!(    (ninf   / nan   )   .is_nan());
+        assert!(    (zero   / nan   )   .is_nan());
+        assert!(    (nzero  / nan   )   .is_nan());
+        // Infinities
+        assert!(    (inf    / inf  )    .is_nan());
+        assert!(    (ninf   / ninf   )  .is_nan());
+        assert!(    (inf    / ninf  )   .is_nan());
+        assert!(    (ninf   / inf   )   .is_nan());
+        assert_eq!( (inf    / p     ),  inf);
+        assert_eq!( (inf    / n     ),  ninf);
+        assert_eq!( (inf    / zero  ),  inf);
+        assert_eq!( (inf    / nzero ),  ninf);
+        assert_eq!( (p      / inf   ),  inf);
+        assert_eq!( (n      / inf   ),  ninf);
+        assert_eq!( (zero   / inf   ),  zero);
+        assert_eq!( (nzero  / inf   ),  nzero);
+        assert_eq!( (ninf   / p     ),  ninf);
+        assert_eq!( (ninf   / n     ),  inf);
+        assert_eq!( (ninf   / zero  ),  ninf);
+        assert_eq!( (ninf   / nzero ),  inf);
+        assert_eq!( (p      / ninf  ),  nzero);
+        assert_eq!( (n      / ninf  ),  zero);
+        assert_eq!( (zero   / ninf  ),  nzero);
+        assert_eq!( (nzero  / ninf  ),  zero);
+        // Zeros
+        assert!(    (zero   / zero )    .is_nan());
+        assert!(    (nzero  / nzero)    .is_nan());
+        assert!(    (zero   / nzero)    .is_nan());
+        assert!(    (nzero  / zero )    .is_nan());
+        assert_eq!( (zero   / p     ),  zero);
+        assert_eq!( (zero   / n     ),  nzero);
+        assert_eq!( (p      / zero  ),  zero);
+        assert_eq!( (n      / zero  ),  nzero);
+        assert_eq!( (nzero  / p     ),  nzero);
+        assert_eq!( (nzero  / n     ),  zero);
+        assert_eq!( (p      / nzero ),  nzero);
+        assert_eq!( (n      / nzero ),  zero);
+    }
+
+    #[test]
+    #[rustfmt::skip]
+    fn rem_special() {
+        let p = sci!(2.5e5);
+        let n = sci!(-2.5e5);
+        let nan = SciDecimal::NAN;
+        let inf = SciDecimal::INFINITY;
+        let ninf = SciDecimal::NEG_INFINITY;
+        let zero = SciDecimal::ZERO;
+        let nzero = SciDecimal::NEG_ZERO;
+        // Check zero has the sign of the dividend
+        assert_eq!( (p      % p     ),  zero);
+        assert_eq!( (n      % n     ),  nzero);
+        assert_eq!( (p      % n     ),  zero);
+        assert_eq!( (n      % p     ),  nzero);
+        // NaN
+        assert!(    (nan    % nan   )   .is_nan());
+        assert!(    (nan    % p     )   .is_nan());
+        assert!(    (nan    % n     )   .is_nan());
+        assert!(    (nan    % inf   )   .is_nan());
+        assert!(    (nan    % ninf  )   .is_nan());
+        assert!(    (nan    % zero  )   .is_nan());
+        assert!(    (nan    % nzero )   .is_nan());
+        assert!(    (p      % nan   )   .is_nan());
+        assert!(    (n      % nan   )   .is_nan());
+        assert!(    (inf    % nan   )   .is_nan());
+        assert!(    (ninf   % nan   )   .is_nan());
+        assert!(    (zero   % nan   )   .is_nan());
+        assert!(    (nzero  % nan   )   .is_nan());
+        // Infinities
+        assert!(    (inf    % inf   )   .is_nan());
+        assert!(    (ninf   % ninf  )   .is_nan());
+        assert!(    (inf    % ninf  )   .is_nan());
+        assert!(    (ninf   % inf   )   .is_nan());
+        assert!(    (inf    % p     )   .is_nan());
+        assert!(    (inf    % n     )   .is_nan());
+        assert!(    (inf    % zero  )   .is_nan());
+        assert!(    (inf    % nzero )   .is_nan());
+        assert_eq!( (p      % inf   ),  p);
+        assert_eq!( (n      % inf   ),  n);
+        assert_eq!( (zero   % inf   ),  zero);
+        assert_eq!( (nzero  % inf   ),  nzero);
+        assert!(    (ninf   % p     )   .is_nan());
+        assert!(    (ninf   % n     )   .is_nan());
+        assert!(    (ninf   % zero  )   .is_nan());
+        assert!(    (ninf   % nzero )   .is_nan());
+        assert_eq!( (p      % ninf   ), p);
+        assert_eq!( (n      % ninf   ), n);
+        assert_eq!( (zero   % ninf   ), zero);
+        assert_eq!( (nzero  % ninf   ), nzero);
+        // Zeros
+        assert!(    (zero   % zero )   .is_nan());
+        assert!(    (nzero  % nzero)   .is_nan());
+        assert!(    (zero   % nzero)   .is_nan());
+        assert!(    (nzero  % zero )   .is_nan());
+        assert_eq!( (zero   % p     ),  zero);
+        assert_eq!( (zero   % n     ),  zero);
+        assert!(    (p      % zero  )   .is_nan());
+        assert!(    (n      % zero  )   .is_nan());
+        assert_eq!( (nzero  % p     ),  nzero);
+        assert_eq!( (nzero  % n     ),  nzero);
+        assert!(    (p      % nzero  )   .is_nan());
+        assert!(    (n      % nzero  )   .is_nan());
     }
 
     #[test]
@@ -2333,6 +2543,13 @@ mod tests {
 
     #[test]
     fn display() {
+        // NaN and infinity should match the native `f64`
+        assert_eq!(SciDecimal::NAN.to_string(), f64::NAN.to_string()); // "NaN"
+        assert_eq!(SciDecimal::INFINITY.to_string(), f64::INFINITY.to_string()); // "inf"
+        assert_eq!(SciDecimal::NEG_INFINITY.to_string(), f64::NEG_INFINITY.to_string()); // "-inf"
+        // As should +/- zero, as long as there's no uncertainty
+        assert_eq!(SciDecimal::ZERO.to_string(), (0.0).to_string()); // "0"
+        assert_eq!(SciDecimal::NEG_ZERO.to_string(), (-0.0).to_string()); // "-0"
         // Numbers with up to five places either side of the decimal point should
         // be displayed using normal notation
         // Integers should display without any decimal point at all
