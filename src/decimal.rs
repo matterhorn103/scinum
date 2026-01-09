@@ -455,6 +455,9 @@ impl SciDecimal {
     /// - 200 returns 2 or 1 or 0, depending on the precision of the number
     #[inline]
     pub fn precision(&self) -> i16 {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         self.exponent()
     }
 
@@ -471,6 +474,9 @@ impl SciDecimal {
     /// - 321 returns 2
     #[inline]
     pub fn precision_most_significant_fig(&self) -> i16 {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         self.exponent() + (i16::from(self.sigfigs()) - 1)
     }
 
@@ -478,6 +484,9 @@ impl SciDecimal {
     /// 0 is considered to have 0 significant figures.
     #[inline]
     pub fn sigfigs(&self) -> u8 {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         if let Some(log) = self.significand.checked_ilog10() {
             log as u8 + 1
         } else {
@@ -497,6 +506,9 @@ impl SciDecimal {
     /// This function panics if the `SciDecimal` already has fewer significant figures
     /// than the requested number.
     pub fn truncate(mut self, sf: u8) -> Self {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         if self.sigfigs() < sf {
             panic!()
         };
@@ -524,6 +536,9 @@ impl SciDecimal {
     /// This function panics if the increase would result in `significand`,
     /// `exponent`, or `uncertainty_scale` exceeding their maximum values.
     pub fn increase_precision(mut self, sf: u8) -> Self {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         for _ in 0..sf {
             self.significand *= 10;
             // Exponent is now too large
@@ -543,6 +558,9 @@ impl SciDecimal {
     ///
     /// The uncertainty of the `SciDecimal` is left unchanged.
     pub fn checked_increase_precision(mut self, sf: u8) -> Option<Self> {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         for _ in 0..sf {
             self.significand = self.significand.checked_mul(10)?;
             // Exponent is now too large
@@ -638,6 +656,9 @@ impl SciNum for SciDecimal {
     /// assert_eq!(n, SciDecimal::new_with_uncertainty(251, 3, -3));
     #[inline]
     fn with_uncertainty(mut self, uncertainty: Self) -> Self {
+        if !uncertainty.is_finite() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         let narrowed_uncertainty = if uncertainty.significand > u32::MAX.into() {
             uncertainty.truncate(9);
             uncertainty
@@ -659,6 +680,9 @@ impl SciNum for SciDecimal {
     /// Returns true if the `SciDecimal` has an uncertainty of zero.
     #[inline]
     fn is_exact(&self) -> bool {
+        if !self.is_finite() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         self.uncertainty == 0
     }
 }
@@ -788,6 +812,9 @@ impl SciDecimal {
     #[inline]
     //#[must_use]
     pub fn is_sign_positive(self) -> bool {
+        if self.is_nan() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         !self.negative
     }
 
@@ -796,6 +823,9 @@ impl SciDecimal {
     #[inline]
     //#[must_use]
     pub fn is_sign_negative(self) -> bool {
+        if self.is_nan() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         self.negative
     }
 
@@ -817,6 +847,9 @@ impl SciDecimal {
     ///
     /// This function panics if `n` is not within the range `-127 <= n <= 127`.
     pub fn powi(self, n: i32) -> Self {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         if !(-127..128).contains(&n) {
             panic!()
         }
@@ -845,6 +878,9 @@ impl SciDecimal {
     }
 
     pub fn exp(self) -> Self {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         let number = Decimal::try_from(self.number()).unwrap().exp();
         if self.is_exact() {
             Self::from(number)
@@ -859,6 +895,9 @@ impl SciDecimal {
     }
 
     pub fn ln(self) -> Self {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         let number = Decimal::try_from(self.number()).unwrap().ln();
         if self.is_exact() {
             Self::from(number)
@@ -879,6 +918,9 @@ impl SciDecimal {
     }
 
     pub fn log10(self) -> Self {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         let number = Decimal::try_from(self.number()).unwrap().log10();
         if self.is_exact() {
             Self::from(number)
@@ -1425,6 +1467,9 @@ impl Pow<Self> for SciDecimal {
     ///
     /// This function panics if `rhs` is not within the range `-127 <= n <= 127`.
     fn pow(self, rhs: Self) -> Self {
+        if !(self.is_normal() & rhs.is_normal()) {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         if rhs > SciDecimal::from(127) || rhs < SciDecimal::from(-127) {
             panic!()
         }
@@ -1565,7 +1610,7 @@ impl FromStr for SciDecimal {
 
     /// Parses a string and attempts to create a corresponding `SciDecimal`.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        //let re = Regex::new(r"^(-?\d+(?:[.,]\d+)?)(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
+        // TODO Support special values
         let re =
             Regex::new(r"^(-)?(\d+)?(?:[.,](\d+))?(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
         let caps = re.captures(s).ok_or(SciNumError::Parse(s.into()))?;
@@ -1679,6 +1724,9 @@ impl From<BigDecimal> for SciDecimal {
 impl From<SciDecimal> for BigDecimal {
     /// Converts a `SciDecimal` into a `bigdecimal::BigDecimal`, dropping any uncertainty.
     fn from(n: SciDecimal) -> Self {
+        if !n.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         BigDecimal::from_bigint(
             BigInt::from_i64(n.significand_signed()).unwrap(),
             -(n.exponent()) as i64,
