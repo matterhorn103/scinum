@@ -175,56 +175,7 @@ impl One for SciFloat {
     }
 }
 
-// Methods that will belong to the Real trait if we implement it properly later
-
-    //todo fn min_value()
-    //todo fn min_positive_value()
-    //todo fn epsilon()
-    //todo fn max_value()
-    //todo fn floor(self)
-    //todo fn ceil(self)
-    //todo fn round(self)
-    //todo fn trunc(self)
-    //todo fn fract(self)
-//*fn abs(self)
-    //todo fn signum(self)
-    //todo fn is_sign_positive(self) -> bool {
-    //todo fn is_sign_negative(self) -> bool {
-    //todo fn mul_add(self, a: Self, b: Self)
-    //todo fn recip(self)
-//*fn powi(self, n: i32)
-    //todo fn powf(self, n: Self)
-//*fn sqrt(self)
-//*fn exp(self)
-    //todo fn exp2(self)
-//*fn ln(self)
-    //todo fn log(self, base: Self)
-    //todo fn log2(self)
-//*fn log10(self)
-//*fn to_degrees(self)
-//*fn to_radians(self)
-//*fn max(self, other: Self)
-//*fn min(self, other: Self)
-//*fn cbrt(self)
-//*fn hypot(self, other: Self)
-//*fn sin(self)
-//*fn cos(self)
-//*fn tan(self)
-    //todo fn asin(self)
-    //todo fn acos(self)
-    //todo fn atan(self)
-    //todo fn atan2(self, other: Self)
-//*fn sin_cos(self) -> (Self, Self) {
-    //todo fn exp_m1(self)
-    //todo fn ln_1p(self)
-    //todo fn sinh(self)
-    //todo fn cosh(self)
-    //todo fn tanh(self)
-    //todo fn asinh(self)
-    //todo fn acosh(self)
-    //todo fn atanh(self)
-
-// changed `Real` to `Float` for some reason
+// Methods that will belong to the Float trait if we implement it properly later
 // impl Float for SciFloat {
 impl SciFloat {
     //fn min_value() -> Self {
