@@ -1635,20 +1635,25 @@ impl TryFrom<SciDecimal> for Decimal {
 
     /// Attempts to convert a `SciDecimal` into a `rust_decimal::Decimal`, dropping
     /// any uncertainty.
-    ///
-    /// Fails if `n` has a positive exponent or an exponent lower than −28.
+    /// 
+    /// Currently goes via the string representation using `Decimal::from_str_exact()`.
+    /// 
+    /// Any number not representable by `Decimal` (generally because the number
+    /// is outside of the range 10<sup>−28</sup> to 10<sup>28</sup>) will lead to
+    /// this function failing.
     fn try_from(n: SciDecimal) -> Result<Decimal, rust_decimal::Error> {
-        if n.exponent.is_positive() {
-            Err(rust_decimal::Error::ConversionTo("Decimal".to_string()))
+        let s = n.number().to_string();
+        dbg!(&s);
+        // Check if in scientific notation or not
+        if s.contains(|x: char| x.is_ascii_alphabetic()) {
+            Decimal::from_scientific(&s)
         } else {
-            Decimal::try_from_i128_with_scale(
-                n.significand_signed().into(),
-                (BiasedExponent::EXPONENT_BIAS - n.exponent.0).into(),
-            )
+            Decimal::from_str_exact(&s)
         }
     }
 }
 
+// TODO: tests
 impl From<BigDecimal> for SciDecimal {
     /// Converts a `bigdecimal::BigDecimal` to a `SciDecimal`.
     ///
@@ -1661,6 +1666,7 @@ impl From<BigDecimal> for SciDecimal {
     }
 }
 
+// TODO: tests
 impl From<SciDecimal> for BigDecimal {
     /// Converts a `SciDecimal` into a `bigdecimal::BigDecimal`, dropping any uncertainty.
     fn from(n: SciDecimal) -> Self {
@@ -1710,15 +1716,6 @@ mod tests {
         let n = SciDecimal::new_with_uncertainty(20, 2, 0);
         assert_eq!(n.number(), SciDecimal::from(20));
         assert_eq!(n.uncertainty(), SciDecimal::new(2, 0));
-    }
-
-    #[test]
-    fn new_from_dec() {
-        let n = SciDecimal::from(dec!(20));
-        assert_eq!(n.number(), SciDecimal::new(20, 0));
-        assert_eq!(n.number(), SciDecimal::from(dec!(20)));
-        assert_eq!(n.uncertainty(), SciDecimal::new(0, 0));
-        assert_eq!(n.uncertainty(), SciDecimal::from(dec!(0)));
     }
 
     #[test]
@@ -1803,9 +1800,20 @@ mod tests {
     }
 
     #[test]
+    fn from_decimal() {
+        let n = SciDecimal::from(dec!(20));
+        assert_eq!(n.number(), SciDecimal::new(20, 0));
+        assert_eq!(n.number(), SciDecimal::from(dec!(20)));
+        assert_eq!(n.uncertainty(), SciDecimal::new(0, 0));
+        assert_eq!(n.uncertainty(), SciDecimal::from(dec!(0)));
+    }
+
+    #[test]
     fn into_decimal() {
-        let n = SciDecimal::new_with_uncertainty(20, 2, 0);
-        assert_eq!(Decimal::try_from(n).unwrap(), dec!(20));
+        let n1 = SciDecimal::new_with_uncertainty(20, 2, 0);
+        assert_eq!(Decimal::try_from(n1).unwrap(), dec!(20));
+        let n2 = sci!(2.5e5);
+        assert_eq!(Decimal::try_from(n2).unwrap(), dec!(2.5e5));
     }
 
     #[test]
