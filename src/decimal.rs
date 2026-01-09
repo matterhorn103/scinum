@@ -10,7 +10,7 @@ use std::{
 };
 
 use bigdecimal::{BigDecimal, num_bigint::BigInt};
-use num_traits::{Float, FromPrimitive, Inv, Num, One, Pow, Zero};
+use num_traits::{FromPrimitive, Inv, Num, One, Pow, Zero};
 use regex::Regex;
 use rust_decimal::{Decimal, MathematicalOps};
 
@@ -592,7 +592,7 @@ impl SciNum for SciDecimal {
     /// Returns the absolute uncertainty as an exact `SciDecimal`.
     ///
     /// The uncertainty is always positive.
-    /// 
+    ///
     /// An infinity always has an uncertainty of (positive) infinity, and `NaN`
     /// always has an uncertainty of `NaN`.
     #[inline]
@@ -675,6 +675,7 @@ impl Num for SciDecimal {
 
 // Methods that will belong to the Float trait when we implement it properly later
 //impl Float for SciDecimal {
+#[allow(unused)]
 impl SciDecimal {
     #[inline]
     pub fn nan() -> Self {
@@ -782,7 +783,6 @@ impl SciDecimal {
         }
     }
 
-    #[allow(unused)]
     /// Returns true if the sign bit is positive.
     /// Zero is also considered positive.
     #[inline]
@@ -1094,115 +1094,6 @@ impl PartialOrd for SciDecimal {
     }
 }
 
-// Arithmetic with correlation
-impl SciDecimal {
-    //pub fn add_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    //where
-    //    T: Into<Decimal>,
-    //{
-    //    let number = Decimal::try_from(self.number()).unwrap() + Decimal::try_from(rhs.number()).unwrap();
-    //    if self.is_exact() && rhs.is_exact() {
-    //        Self::from(number)
-    //    } else {
-    //        let sigma_ab = correlation.into()
-    //            * Decimal::try_from(self.uncertainty()).unwrap()
-    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
-    //        let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
-    //            + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2))
-    //            + (Decimal::TWO * sigma_ab))
-    //            .sqrt()
-    //            .unwrap();
-    //        Self::from(number).with_uncertainty(uncertainty.into())
-    //    }
-    //}
-
-    //pub fn sub_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    //where
-    //    T: Into<Decimal>,
-    //{
-    //    let number = Decimal::try_from(self.number()).unwrap() - Decimal::try_from(rhs.number()).unwrap();
-    //    if self.is_exact() && rhs.is_exact() {
-    //        Self::from(number)
-    //    } else {
-    //        let sigma_ab = correlation.into()
-    //            * Decimal::try_from(self.uncertainty()).unwrap()
-    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
-    //        let uncertainty = ((Decimal::try_from(self.uncertainty()).unwrap().powu(2))
-    //            + (Decimal::try_from(rhs.uncertainty()).unwrap().powu(2))
-    //            - (Decimal::TWO * sigma_ab))
-    //            .sqrt()
-    //            .unwrap();
-    //        Self::from(number).with_uncertainty(uncertainty.into())
-    //    }
-    //}
-
-    //pub fn mul_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    //where
-    //    T: Into<Decimal>,
-    //{
-    //    let number = Decimal::try_from(self.number()).unwrap() * Decimal::try_from(rhs.number()).unwrap();
-    //    if self.is_exact() && rhs.is_exact() {
-    //        Self::from(number)
-    //    } else {
-    //        let sigma_ab = correlation.into()
-    //            * Decimal::try_from(self.uncertainty()).unwrap()
-    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
-    //        let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap().powu(2))
-    //            + (Decimal::try_from(rhs.relative_uncertainty()).unwrap().powu(2))
-    //            + (Decimal::TWO * sigma_ab / number))
-    //            .sqrt()
-    //            .unwrap()
-    //            * number.abs();
-    //        Self::from(number).with_uncertainty(uncertainty.into())
-    //    }
-    //}
-
-    //pub fn div_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    //where
-    //    T: Into<Decimal>,
-    //{
-    //    let number = Decimal::try_from(self.number()).unwrap() / Decimal::try_from(rhs.number()).unwrap();
-    //    if self.is_exact() && rhs.is_exact() {
-    //       Self::from(number)
-    //    } else {
-    //        let sigma_ab = correlation.into()
-    //            * Decimal::try_from(self.uncertainty()).unwrap()
-    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
-    //        let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap().powu(2))
-    //            + (Decimal::try_from(rhs.relative_uncertainty()).unwrap().powu(2))
-    //            - (Decimal::TWO * sigma_ab / number))
-    //            .sqrt()
-    //            .unwrap()
-    //            * number.abs();
-    //        Self::from(number).with_uncertainty(uncertainty.into())
-    //    }
-    //}
-
-    //pub fn pow_with_correlation<T>(self, rhs: Self, correlation: T) -> Self
-    //where
-    //    T: Into<Decimal>,
-    //{
-    //    let number = Decimal::try_from(self.number()).unwrap().powd(Decimal::try_from(rhs.number()).unwrap());
-    //    if self.is_exact() && rhs.is_exact() {
-    //        Self::from(number)
-    //    } else {
-    //        let sigma_ab = correlation.into()
-    //            * Decimal::try_from(self.uncertainty()).unwrap()
-    //            * Decimal::try_from(rhs.uncertainty()).unwrap();
-    //        let uncertainty = ((Decimal::try_from(self.relative_uncertainty()).unwrap() * Decimal::try_from(rhs.number()).unwrap()).powu(2)
-    //            + (Decimal::try_from(self.number()).unwrap().ln() * Decimal::try_from(rhs.uncertainty()).unwrap()).powu(2)
-    //            + (Decimal::TWO
-    //                * ((Decimal::try_from(self.number()).unwrap().ln() * Decimal::try_from(rhs.number()).unwrap())
-    //                    / Decimal::try_from(self.number()).unwrap())
-    //                * sigma_ab))
-    //            .sqrt()
-    //            .unwrap()
-    //            * number.abs();
-    //        Self::from(number).with_uncertainty(uncertainty.into())
-    //    }
-    //}
-}
-
 impl Add for SciDecimal {
     type Output = Self;
 
@@ -1503,6 +1394,8 @@ impl Rem for SciDecimal {
             return Self::NAN;
         }
         // TODO implement natively, not via Decimal
+        dbg!(&self);
+        dbg!(self.to_string());
         let number =
             Decimal::try_from(self.number()).unwrap() % Decimal::try_from(rhs.number()).unwrap();
         // Don't calculate uncertainty as the remainder function is discontinuous,
@@ -2097,6 +1990,7 @@ mod tests {
     }
 
     #[test]
+    #[rustfmt::skip]
     fn add_special() {
         let p = sci!(2.5e5);
         let n = sci!(-2.5e5);
@@ -2105,54 +1999,57 @@ mod tests {
         let ninf = SciDecimal::NEG_INFINITY;
         let zero = SciDecimal::ZERO;
         let nzero = SciDecimal::NEG_ZERO;
+        // Check positive zero is always created when summing to zero
+        assert_eq!( (p      + n     ),  zero);
+        assert_eq!( (n      + p     ),  zero);
         // NaN
-        assert!((nan    + nan   ).is_nan());
-        assert!((nan    + p     ).is_nan());
-        assert!((p      + nan   ).is_nan());
-        assert!((nan    + n     ).is_nan());
-        assert!((n      + nan   ).is_nan());
-        assert!((nan    + inf   ).is_nan());
-        assert!((inf    + nan   ).is_nan());
-        assert!((nan    + ninf  ).is_nan());
-        assert!((ninf   + nan   ).is_nan());
-        assert!((nan    + zero  ).is_nan());
-        assert!((zero   + nan   ).is_nan());
-        assert!((nan    + nzero ).is_nan());
-        assert!((nzero  + nan   ).is_nan());
+        assert!(    (nan    + nan   )   .is_nan());
+        assert!(    (nan    + p     )   .is_nan());
+        assert!(    (nan    + n     )   .is_nan());
+        assert!(    (nan    + inf   )   .is_nan());
+        assert!(    (nan    + ninf  )   .is_nan());
+        assert!(    (nan    + zero  )   .is_nan());
+        assert!(    (nan    + nzero )   .is_nan());
+        assert!(    (p      + nan   )   .is_nan());
+        assert!(    (n      + nan   )   .is_nan());
+        assert!(    (inf    + nan   )   .is_nan());
+        assert!(    (ninf   + nan   )   .is_nan());
+        assert!(    (zero   + nan   )   .is_nan());
+        assert!(    (nzero  + nan   )   .is_nan());
         // Infinities
-        assert_eq!(inf      + inf   , inf);
-        assert_eq!(ninf     + ninf  , ninf);
-        assert!((inf    + ninf  ).is_nan());
-        assert!((ninf   + inf   ).is_nan());
-        assert_eq!(inf      + p     , inf);
-        assert_eq!(inf      + n     , inf);
-        assert_eq!(ninf     + p     , ninf);
-        assert_eq!(ninf     + n     , ninf);
-        assert_eq!(p        + inf   , inf);
-        assert_eq!(n        + inf   , inf);
-        assert_eq!(p        + ninf  , ninf);
-        assert_eq!(n        + ninf  , ninf);
-        assert_eq!(inf      + zero  , inf);
-        assert_eq!(inf      + nzero , inf);
-        assert_eq!(ninf     + zero  , ninf);
-        assert_eq!(ninf     + nzero , ninf);
-        assert_eq!(zero     + inf   , inf);
-        assert_eq!(nzero    + inf   , inf);
-        assert_eq!(zero     + ninf  , ninf);
-        assert_eq!(nzero    + ninf  , ninf);
+        assert_eq!( (inf    + inf   ),  inf);
+        assert_eq!( (ninf   + ninf  ),  ninf);
+        assert!(    (inf    + ninf  )   .is_nan());
+        assert!(    (ninf   + inf   )   .is_nan());
+        assert_eq!( (inf    + p     ),  inf);
+        assert_eq!( (inf    + n     ),  inf);
+        assert_eq!( (inf    + zero  ),  inf);
+        assert_eq!( (inf    + nzero ),  inf);
+        assert_eq!( (p      + inf   ),  inf);
+        assert_eq!( (n      + inf   ),  inf);
+        assert_eq!( (zero   + inf   ),  inf);
+        assert_eq!( (nzero  + inf   ),  inf);
+        assert_eq!( (ninf   + p     ),  ninf);
+        assert_eq!( (ninf   + n     ),  ninf);
+        assert_eq!( (ninf   + zero  ),  ninf);
+        assert_eq!( (ninf   + nzero ),  ninf);
+        assert_eq!( (p      + ninf  ),  ninf);
+        assert_eq!( (n      + ninf  ),  ninf);
+        assert_eq!( (zero   + ninf  ),  ninf);
+        assert_eq!( (nzero  + ninf  ),  ninf);
         // Zeros
-        assert_eq!(zero + zero, zero);
-        assert_eq!(nzero + nzero, nzero);
-        assert_eq!(zero + nzero, zero);
-        assert_eq!(nzero + zero, zero);
-        assert_eq!(zero + p, p);
-        assert_eq!(nzero + p, p);
-        assert_eq!(zero + n, n);
-        assert_eq!(nzero + n, n);
-        assert_eq!(p + zero, p);
-        assert_eq!(p + nzero, p);
-        assert_eq!(n + zero, n);
-        assert_eq!(n + nzero, n);
+        assert_eq!( (zero   + zero  ),  zero);
+        assert_eq!( (nzero  + nzero ),  nzero);
+        assert_eq!( (zero   + nzero ),  zero);
+        assert_eq!( (nzero  + zero  ),  zero);
+        assert_eq!( (zero   + p     ),  p);
+        assert_eq!( (zero   + n     ),  n);
+        assert_eq!( (p      + zero  ),  p);
+        assert_eq!( (n      + zero  ),  n);
+        assert_eq!( (nzero  + p     ),  p);
+        assert_eq!( (nzero  + n     ),  n);
+        assert_eq!( (p      + nzero ),  p);
+        assert_eq!( (n      + nzero ),  n);
     }
 
     #[test]
@@ -2175,6 +2072,69 @@ mod tests {
     }
 
     #[test]
+    #[rustfmt::skip]
+    fn sub_special() {
+        let p = sci!(2.5e5);
+        let n = sci!(-2.5e5);
+        let nan = SciDecimal::NAN;
+        let inf = SciDecimal::INFINITY;
+        let ninf = SciDecimal::NEG_INFINITY;
+        let zero = SciDecimal::ZERO;
+        let nzero = SciDecimal::NEG_ZERO;
+        // Check positive zero is always created when summing to zero
+        assert_eq!( (p      - p     ),  zero);
+        assert_eq!( (n      - n     ),  zero);
+        // NaN
+        assert!(    (nan    - nan   )   .is_nan());
+        assert!(    (nan    - p     )   .is_nan());
+        assert!(    (nan    - n     )   .is_nan());
+        assert!(    (nan    - inf   )   .is_nan());
+        assert!(    (nan    - ninf  )   .is_nan());
+        assert!(    (nan    - zero  )   .is_nan());
+        assert!(    (nan    - nzero )   .is_nan());
+        assert!(    (p      - nan   )   .is_nan());
+        assert!(    (n      - nan   )   .is_nan());
+        assert!(    (inf    - nan   )   .is_nan());
+        assert!(    (ninf   - nan   )   .is_nan());
+        assert!(    (zero   - nan   )   .is_nan());
+        assert!(    (nzero  - nan   )   .is_nan());
+        // Infinities
+        assert!(    (inf    - inf   )   .is_nan());
+        assert!(    (ninf   - ninf  )   .is_nan());
+        assert_eq!( (inf    - ninf  ),  inf);
+        assert_eq!( (ninf   - inf   ),  ninf);
+        assert_eq!( (inf    - p     ),  inf);
+        assert_eq!( (inf    - n     ),  inf);
+        assert_eq!( (inf    - zero  ),  inf);
+        assert_eq!( (inf    - nzero ),  inf);
+        assert_eq!( (p      - inf   ),  ninf);
+        assert_eq!( (n      - inf   ),  ninf);
+        assert_eq!( (zero   - inf   ),  ninf);
+        assert_eq!( (nzero  - inf   ),  ninf);
+        assert_eq!( (ninf   - p     ),  ninf);
+        assert_eq!( (ninf   - n     ),  ninf);
+        assert_eq!( (ninf   - zero  ),  ninf);
+        assert_eq!( (ninf   - nzero ),  ninf);
+        assert_eq!( (p      - ninf  ),  inf);
+        assert_eq!( (n      - ninf  ),  inf);
+        assert_eq!( (zero   - ninf  ),  inf);
+        assert_eq!( (nzero  - ninf  ),  inf);
+        // Zeros
+        assert_eq!( (zero   - zero  ),  zero);
+        assert_eq!( (nzero  - nzero ),  zero);
+        assert_eq!( (zero   - nzero ),  zero);
+        assert_eq!( (nzero  - zero  ),  nzero);
+        assert_eq!( (zero   - p     ),  n);
+        assert_eq!( (zero   - n     ),  p);
+        assert_eq!( (p      - zero  ),  p);
+        assert_eq!( (n      - zero  ),  n);
+        assert_eq!( (nzero  - p     ),  n);
+        assert_eq!( (nzero  - n     ),  p);
+        assert_eq!( (p      - nzero ),  p);
+        assert_eq!( (n      - nzero ),  n);
+    }
+
+    #[test]
     fn mul_exact() {
         let n1 = SciDecimal::new(20, 0);
         let n2 = SciDecimal::new(30, 0);
@@ -2194,6 +2154,66 @@ mod tests {
         let ft = SciDecimal::from(dec!(0.3048));
         let square_ft = ft * ft;
         assert_eq!(square_ft, sci!(0.09290304));
+    }
+
+    #[test]
+    #[rustfmt::skip]
+    fn mul_special() {
+        let p = sci!(2.5e5);
+        let n = sci!(-2.5e5);
+        let nan = SciDecimal::NAN;
+        let inf = SciDecimal::INFINITY;
+        let ninf = SciDecimal::NEG_INFINITY;
+        let zero = SciDecimal::ZERO;
+        let nzero = SciDecimal::NEG_ZERO;
+        // NaN
+        assert!(    (nan    * nan   )   .is_nan());
+        assert!(    (nan    * p     )   .is_nan());
+        assert!(    (nan    * n     )   .is_nan());
+        assert!(    (nan    * inf   )   .is_nan());
+        assert!(    (nan    * ninf  )   .is_nan());
+        assert!(    (nan    * zero  )   .is_nan());
+        assert!(    (nan    * nzero )   .is_nan());
+        assert!(    (p      * nan   )   .is_nan());
+        assert!(    (n      * nan   )   .is_nan());
+        assert!(    (inf    * nan   )   .is_nan());
+        assert!(    (ninf   * nan   )   .is_nan());
+        assert!(    (zero   * nan   )   .is_nan());
+        assert!(    (nzero  * nan   )   .is_nan());
+        // Infinities
+        assert_eq!( (inf    * inf   ),  inf);
+        assert_eq!( (ninf   * ninf  ),  inf);
+        assert_eq!( (inf    * ninf  ),  ninf);
+        assert_eq!( (ninf   * inf   ),  ninf);
+        assert_eq!( (inf    * p     ),  inf);
+        assert_eq!( (inf    * n     ),  ninf);
+        assert!(    (inf    * zero  )   .is_nan());
+        assert!(    (inf    * nzero )   .is_nan());
+        assert_eq!( (p      * inf   ),  inf);
+        assert_eq!( (n      * inf   ),  ninf);
+        assert!(    (zero   * inf   )   .is_nan());
+        assert!(    (nzero  * inf   )   .is_nan());
+        assert_eq!( (ninf   * p     ),  ninf);
+        assert_eq!( (ninf   * n     ),  inf);
+        assert!(    (ninf   * zero  )   .is_nan());
+        assert!(    (ninf   * nzero )   .is_nan());
+        assert_eq!( (p      * ninf  ),  ninf);
+        assert_eq!( (n      * ninf  ),  inf);
+        assert!(    (zero   * ninf  )   .is_nan());
+        assert!(    (nzero  * ninf  )   .is_nan());
+        // Zeros
+        assert_eq!( (zero   * zero  ),  zero);
+        assert_eq!( (nzero  * nzero ),  zero);
+        assert_eq!( (zero   * nzero ),  nzero);
+        assert_eq!( (nzero  * zero  ),  nzero);
+        assert_eq!( (zero   * p     ),  zero);
+        assert_eq!( (zero   * n     ),  nzero);
+        assert_eq!( (p      * zero  ),  zero);
+        assert_eq!( (n      * zero  ),  nzero);
+        assert_eq!( (nzero  * p     ),  nzero);
+        assert_eq!( (nzero  * n     ),  zero);
+        assert_eq!( (p      * nzero ),  nzero);
+        assert_eq!( (n      * nzero ),  zero);
     }
 
     #[test]
@@ -2251,6 +2271,131 @@ mod tests {
             Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
             dec!(0.2915475947422).round_dp(5)
         );
+    }
+
+    #[test]
+    #[rustfmt::skip]
+    fn div_special() {
+        let p = sci!(2.5e5);
+        let n = sci!(-2.5e5);
+        let nan = SciDecimal::NAN;
+        let inf = SciDecimal::INFINITY;
+        let ninf = SciDecimal::NEG_INFINITY;
+        let zero = SciDecimal::ZERO;
+        let nzero = SciDecimal::NEG_ZERO;
+        // NaN
+        assert!(    (nan    / nan   )   .is_nan());
+        assert!(    (nan    / p     )   .is_nan());
+        assert!(    (nan    / n     )   .is_nan());
+        assert!(    (nan    / inf   )   .is_nan());
+        assert!(    (nan    / ninf  )   .is_nan());
+        assert!(    (nan    / zero  )   .is_nan());
+        assert!(    (nan    / nzero )   .is_nan());
+        assert!(    (p      / nan   )   .is_nan());
+        assert!(    (n      / nan   )   .is_nan());
+        assert!(    (inf    / nan   )   .is_nan());
+        assert!(    (ninf   / nan   )   .is_nan());
+        assert!(    (zero   / nan   )   .is_nan());
+        assert!(    (nzero  / nan   )   .is_nan());
+        // Infinities
+        assert!(    (inf    / inf  )    .is_nan());
+        assert!(    (ninf   / ninf   )  .is_nan());
+        assert!(    (inf    / ninf  )   .is_nan());
+        assert!(    (ninf   / inf   )   .is_nan());
+        assert_eq!( (inf    / p     ),  inf);
+        assert_eq!( (inf    / n     ),  ninf);
+        assert_eq!( (inf    / zero  ),  inf);
+        assert_eq!( (inf    / nzero ),  ninf);
+        assert_eq!( (p      / inf   ),  inf);
+        assert_eq!( (n      / inf   ),  ninf);
+        assert_eq!( (zero   / inf   ),  zero);
+        assert_eq!( (nzero  / inf   ),  nzero);
+        assert_eq!( (ninf   / p     ),  ninf);
+        assert_eq!( (ninf   / n     ),  inf);
+        assert_eq!( (ninf   / zero  ),  ninf);
+        assert_eq!( (ninf   / nzero ),  inf);
+        assert_eq!( (p      / ninf  ),  nzero);
+        assert_eq!( (n      / ninf  ),  zero);
+        assert_eq!( (zero   / ninf  ),  nzero);
+        assert_eq!( (nzero  / ninf  ),  zero);
+        // Zeros
+        assert!(    (zero   / zero )    .is_nan());
+        assert!(    (nzero  / nzero)    .is_nan());
+        assert!(    (zero   / nzero)    .is_nan());
+        assert!(    (nzero  / zero )    .is_nan());
+        assert_eq!( (zero   / p     ),  zero);
+        assert_eq!( (zero   / n     ),  nzero);
+        assert_eq!( (p      / zero  ),  zero);
+        assert_eq!( (n      / zero  ),  nzero);
+        assert_eq!( (nzero  / p     ),  nzero);
+        assert_eq!( (nzero  / n     ),  zero);
+        assert_eq!( (p      / nzero ),  nzero);
+        assert_eq!( (n      / nzero ),  zero);
+    }
+
+    #[test]
+    #[rustfmt::skip]
+    fn rem_special() {
+        let p = sci!(2.5e5);
+        let n = sci!(-2.5e5);
+        let nan = SciDecimal::NAN;
+        let inf = SciDecimal::INFINITY;
+        let ninf = SciDecimal::NEG_INFINITY;
+        let zero = SciDecimal::ZERO;
+        let nzero = SciDecimal::NEG_ZERO;
+        // Check zero has the sign of the dividend
+        assert_eq!( (p      % p     ),  zero);
+        assert_eq!( (n      % n     ),  nzero);
+        assert_eq!( (p      % n     ),  zero);
+        assert_eq!( (n      % p     ),  nzero);
+        // NaN
+        assert!(    (nan    % nan   )   .is_nan());
+        assert!(    (nan    % p     )   .is_nan());
+        assert!(    (nan    % n     )   .is_nan());
+        assert!(    (nan    % inf   )   .is_nan());
+        assert!(    (nan    % ninf  )   .is_nan());
+        assert!(    (nan    % zero  )   .is_nan());
+        assert!(    (nan    % nzero )   .is_nan());
+        assert!(    (p      % nan   )   .is_nan());
+        assert!(    (n      % nan   )   .is_nan());
+        assert!(    (inf    % nan   )   .is_nan());
+        assert!(    (ninf   % nan   )   .is_nan());
+        assert!(    (zero   % nan   )   .is_nan());
+        assert!(    (nzero  % nan   )   .is_nan());
+        // Infinities
+        assert!(    (inf    % inf   )   .is_nan());
+        assert!(    (ninf   % ninf  )   .is_nan());
+        assert!(    (inf    % ninf  )   .is_nan());
+        assert!(    (ninf   % inf   )   .is_nan());
+        assert!(    (inf    % p     )   .is_nan());
+        assert!(    (inf    % n     )   .is_nan());
+        assert!(    (inf    % zero  )   .is_nan());
+        assert!(    (inf    % nzero )   .is_nan());
+        assert_eq!( (p      % inf   ),  p);
+        assert_eq!( (n      % inf   ),  n);
+        assert_eq!( (zero   % inf   ),  zero);
+        assert_eq!( (nzero  % inf   ),  nzero);
+        assert!(    (ninf   % p     )   .is_nan());
+        assert!(    (ninf   % n     )   .is_nan());
+        assert!(    (ninf   % zero  )   .is_nan());
+        assert!(    (ninf   % nzero )   .is_nan());
+        assert_eq!( (p      % ninf   ), p);
+        assert_eq!( (n      % ninf   ), n);
+        assert_eq!( (zero   % ninf   ), zero);
+        assert_eq!( (nzero  % ninf   ), nzero);
+        // Zeros
+        assert!(    (zero   % zero )   .is_nan());
+        assert!(    (nzero  % nzero)   .is_nan());
+        assert!(    (zero   % nzero)   .is_nan());
+        assert!(    (nzero  % zero )   .is_nan());
+        assert_eq!( (zero   % p     ),  zero);
+        assert_eq!( (zero   % n     ),  zero);
+        assert!(    (p      % zero  )   .is_nan());
+        assert!(    (n      % zero  )   .is_nan());
+        assert_eq!( (nzero  % p     ),  nzero);
+        assert_eq!( (nzero  % n     ),  nzero);
+        assert!(    (p      % nzero  )   .is_nan());
+        assert!(    (n      % nzero  )   .is_nan());
     }
 
     #[test]
