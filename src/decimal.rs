@@ -505,7 +505,7 @@ impl SciDecimal {
     ///
     /// This function panics if the `SciDecimal` already has fewer significant figures
     /// than the requested number.
-    pub fn truncate(mut self, sf: u8) -> Self {
+    pub fn trunc_sf(mut self, sf: u8) -> Self {
         if !self.is_normal() {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -660,7 +660,7 @@ impl SciNum for SciDecimal {
             todo!("Special values are not yet handled correctly by this method!")
         }
         let narrowed_uncertainty = if uncertainty.significand > u32::MAX.into() {
-            uncertainty.truncate(9);
+            uncertainty.trunc_sf(9);
             uncertainty
         } else {
             uncertainty
@@ -2007,20 +2007,20 @@ mod tests {
     fn truncate() {
         // Positive
         let n = sci!(25.6949);
-        assert_eq!(n.truncate(2), sci!(25));
-        assert_eq!(n.truncate(3), sci!(25.6));
+        assert_eq!(n.trunc_sf(2), sci!(25));
+        assert_eq!(n.trunc_sf(3), sci!(25.6));
         // Negative
         let n = sci!(-3.794718);
-        assert_eq!(n.truncate(4), sci!(-3.794));
-        assert_eq!(n.truncate(3), sci!(-3.79));
+        assert_eq!(n.trunc_sf(4), sci!(-3.794));
+        assert_eq!(n.trunc_sf(3), sci!(-3.79));
         // Integer
         let n = sci!(4327890);
-        assert_eq!(n.truncate(4), sci!(4.327e6));
-        assert_eq!(n.truncate(5), sci!(4.3278e6));
+        assert_eq!(n.trunc_sf(4), sci!(4.327e6));
+        assert_eq!(n.trunc_sf(5), sci!(4.3278e6));
         // Smaller than 1
         let n = sci!(0.4327890);
-        assert_eq!(n.truncate(4), sci!(4.327e-1));
-        assert_eq!(n.truncate(5), sci!(4.3278e-1));
+        assert_eq!(n.trunc_sf(4), sci!(4.327e-1));
+        assert_eq!(n.trunc_sf(5), sci!(4.3278e-1));
     }
 
     #[test]
