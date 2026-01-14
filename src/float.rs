@@ -10,7 +10,7 @@ use std::{
 
 use num_traits::{Inv, Num, One, Zero};
 
-use crate::{SciDecimal, SciNum, error::SciNumError};
+use crate::{RoundingMode, SciDecimal, SciNum, error::SciNumError};
 
 #[derive(Debug, Clone, Copy)]
 pub struct SciFloat {
@@ -75,6 +75,42 @@ impl SciNum for SciFloat {
         number: 1.0,
         uncertainty: 0.0,
     };
+    
+    fn round_precision(self, prec: i16, mode: RoundingMode) -> Self {
+        todo!()
+    }
+    
+    fn round_dp(self, dp: u16, mode: RoundingMode) -> Self {
+        todo!()
+    }
+    
+    fn round_sf(self, sf: u8, mode: RoundingMode) -> Self {
+        todo!()
+    }
+    
+    fn round_match_uncertainty(self, mode: RoundingMode) -> Self {
+        todo!()
+    }
+    
+    fn round_match_uncertainty_sf(self, sf: u8, mode: RoundingMode) -> Self {
+        todo!()
+    }
+    
+    fn round_uncertainty_precision(self, prec: i16, mode: RoundingMode) -> Self {
+        todo!()
+    }
+    
+    fn round_uncertainty_dp(self, dp: u16, mode: RoundingMode) -> Self {
+        todo!()
+    }
+    
+    fn round_uncertainty_sf(self, sf: u8, mode: RoundingMode) -> Self {
+        todo!()
+    }
+    
+    fn round_uncertainty_match_number(self, mode: RoundingMode) -> Self {
+        todo!()
+    }
 }
 
 impl From<f64> for SciFloat {

@@ -14,7 +14,7 @@ use num_traits::{FromPrimitive, Inv, Num, One, Pow, Zero};
 use regex::Regex;
 use rust_decimal::{Decimal, MathematicalOps};
 
-use crate::{SciNum, error::SciNumError};
+use crate::{RoundingMode, SciNum, error::SciNumError, rounding::cmp_tie};
 
 /// A 16-bit signed exponent represented as a 16-bit unsigned integer by using a bias.
 ///
@@ -399,7 +399,7 @@ impl SciDecimal {
         if self.is_zero() {
             return (0, 0, 0, 0, 0);
         };
-        let figs = self.sigfigs() as u32;
+        let figs = self.sf() as u32;
         let int_unsigned = self.significand / 10_u64.pow(figs - 1); // First digit
         let int = if self.negative {
             -(int_unsigned as i8)
@@ -446,7 +446,7 @@ impl SciDecimal {
 
 // Precision, figures, and rounding
 impl SciDecimal {
-    /// Returns the scale of the last significant place.
+    /// Returns the scale of the least significant place.
     ///
     /// For example:
     /// - 0.02 returns -2
@@ -477,13 +477,21 @@ impl SciDecimal {
         if !self.is_normal() {
             todo!("Special values are not yet handled correctly by this method!")
         }
-        self.exponent() + (i16::from(self.sigfigs()) - 1)
+        self.exponent() + (i16::from(self.sf()) - 1)
+    }
+
+    /// Returns the scale of the least significant place of the uncertainty.
+    pub fn precision_uncertainty(&self) -> Option<i16> {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        if self.is_exact() { None } else { Some(self.exponent() + self.uncertainty_scale as i16) }
     }
 
     /// Returns the number of significant decimal digits in the significand.
     /// 0 is considered to have 0 significant figures.
     #[inline]
-    pub fn sigfigs(&self) -> u8 {
+    pub fn sf(&self) -> u8 {
         if !self.is_normal() {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -491,6 +499,21 @@ impl SciDecimal {
             log as u8 + 1
         } else {
             0
+        }
+    }
+
+    /// Returns the number of significant decimal digits after the radix point
+    /// when expressed in normal (non-scientific) notation, including leading
+    /// zeros.
+    #[inline]
+    pub fn dp(&self) -> u16 {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        if self.precision() >= 0 {
+            0
+        } else {
+            self.precision().unsigned_abs()
         }
     }
 
@@ -509,10 +532,10 @@ impl SciDecimal {
         if !self.is_normal() {
             todo!("Special values are not yet handled correctly by this method!")
         }
-        if self.sigfigs() < sf {
+        if self.sf() < sf {
             panic!()
         };
-        while self.sigfigs() > sf {
+        while self.sf() > sf {
             self.significand /= 10;
             // Exponent is now too small
             self.exponent.0 += 1;
@@ -684,6 +707,116 @@ impl SciNum for SciDecimal {
             todo!("Special values are not yet handled correctly by this method!")
         }
         self.uncertainty == 0
+    }
+    
+    fn round_precision(self, prec: i16, mode: RoundingMode) -> Self {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        if self.exponent() == prec {
+            return self
+        }
+        let mut new = self;
+        let current_prec = new.exponent();
+        if prec < current_prec {
+            // Simply add zeros to fulfil request
+            new = new.increase_precision((current_prec - prec).try_into().expect("Requested change in precision must be less than 256 places/figures!"));
+        } else {
+            // Decrease precision while following the specified rounding mode
+            let shifted = prec - current_prec; // Places to remove, will be a positive number
+            let divisor = 10_u64.pow(shifted as u32);
+            let mut new_sig = self.significand / divisor;
+            let removed_digits = self.significand % divisor;
+            if removed_digits == 0 {
+                // No rounding to be done, we only removed significant zeros
+            } else {
+                match mode {
+                    RoundingMode::HalfUp => {
+                        match cmp_tie(removed_digits) {
+                            Ordering::Less => {},
+                            Ordering::Equal => new_sig += 1,
+                            Ordering::Greater => new_sig += 1,
+                        }
+                    },
+                    RoundingMode::HalfDown => {
+                        match cmp_tie(removed_digits) {
+                            Ordering::Less => {},
+                            Ordering::Equal => {},
+                            Ordering::Greater => new_sig += 1,
+                        }
+                    },
+                    RoundingMode::HalfEven => {
+                        match cmp_tie(removed_digits) {
+                            Ordering::Less => {},
+                            Ordering::Equal => {
+                                if !new_sig.is_multiple_of(2) {
+                                    new_sig += 1;
+                                }
+                            },
+                            Ordering::Greater => new_sig += 1,
+                        }
+                    },
+                    RoundingMode::Up => new_sig += 1,
+                    RoundingMode::Down => {},
+                    RoundingMode::Ceiling => if !new.negative { new_sig += 1 },
+                    RoundingMode::Floor => if new.negative { new_sig += 1 },
+                }
+            }
+            new.significand = new_sig;
+            new.exponent = prec.into();
+            if !new.is_exact() {
+                new.uncertainty_scale -= shifted as i8;
+            }
+        }
+        new
+    }
+    
+    #[inline]
+    fn round_dp(self, dp: u16, mode: RoundingMode) -> Self {
+        let desired_prec = (dp as i16).neg();
+        self.round_precision(desired_prec, mode)
+    }
+    
+    #[inline]
+    fn round_sf(self, sf: u8, mode: RoundingMode) -> Self {
+        let current_sf = self.sf(); // e.g. 3
+        let prec_change = (current_sf as i16) - (sf as i16); // 3 - 1 = 2
+        let desired_prec = self.precision() + prec_change;
+        self.round_precision(desired_prec, mode)
+    }
+    
+    #[inline]
+    fn round_match_uncertainty(self, mode: RoundingMode) -> Self {
+        if self.is_exact() {
+            self
+        } else {
+            self.round_precision(self.precision_uncertainty().unwrap(), mode)
+        }
+    }
+    
+    #[inline]
+    fn round_match_uncertainty_sf(self, sf: u8, mode: RoundingMode) -> Self {
+        self.with_uncertainty(self.uncertainty().round_sf(sf, mode)).round_match_uncertainty(mode)
+    }
+    
+    #[inline]
+    fn round_uncertainty_precision(self, prec: i16, mode: RoundingMode) -> Self {
+        self.with_uncertainty(self.uncertainty().round_precision(prec, mode))
+    }
+    
+    #[inline]
+    fn round_uncertainty_dp(self, dp: u16, mode: RoundingMode) -> Self {
+        self.with_uncertainty(self.uncertainty().round_dp(dp, mode))
+    }
+    
+    #[inline]
+    fn round_uncertainty_sf(self, sf: u8, mode: RoundingMode) -> Self {
+        self.with_uncertainty(self.uncertainty().round_sf(sf, mode))
+    }
+    
+    #[inline]
+    fn round_uncertainty_match_number(self, mode: RoundingMode) -> Self {
+        self.with_uncertainty(self.uncertainty().round_precision(self.precision(), mode))
     }
 }
 
@@ -1580,7 +1713,7 @@ impl fmt::Display for SciDecimal {
                 // 3.1 has precision = -1, sigfigs = 2
                 // 42.764 has precision = -3, sigfigs = 5
                 // 3.02 has precision = -2, sigfigs = 3
-                let int_figs = self.sigfigs() as u16 - self.precision().unsigned_abs();
+                let int_figs = self.sf() as u16 - self.precision().unsigned_abs();
                 let mut int = significand.to_string();
                 let frac = int.split_off(int_figs.into());
                 write!(f, "{sign}{int}.{frac}{uncertainty}")
@@ -1588,7 +1721,7 @@ impl fmt::Display for SciDecimal {
             } else {
                 // 0.005 needs to have two zeros, precision = -3, sigfigs = 1
                 let zeros = // (-3).abs() - 1 = 2
-                    "0".repeat((self.precision().unsigned_abs() - self.sigfigs() as u16).into());
+                    "0".repeat((self.precision().unsigned_abs() - self.sf() as u16).into());
                 write!(f, "{sign}0.{zeros}{significand}{uncertainty}")
             }
         // Otherwise, use scientific notation
@@ -1933,30 +2066,43 @@ mod tests {
     }
 
     #[test]
-    fn sigfigs() {
+    fn sf() {
         let n = SciDecimal::from_scientific_parts(123, 0, 45, 0, 0);
-        assert_eq!(n.sigfigs(), 5);
+        assert_eq!(n.sf(), 5);
 
         let n2 = SciDecimal::from_scientific_parts(123, 1, 45, 0, 0);
-        assert_eq!(n2.sigfigs(), 6);
+        assert_eq!(n2.sf(), 6);
 
         let n3 = SciDecimal::from(dec!(0.00123));
-        assert_eq!(n3.sigfigs(), 3);
+        assert_eq!(n3.sf(), 3);
 
         let n4 = SciDecimal::new(1234, 0);
-        assert_eq!(n4.sigfigs(), 4);
+        assert_eq!(n4.sf(), 4);
     }
 
     #[test]
-    fn sigfigs_trailing_zeros() {
+    fn sf_trailing_zeros() {
         let n = SciDecimal::from_scientific_parts(123, 0, 4500, 0, 0);
-        assert_eq!(n.sigfigs(), 7);
+        assert_eq!(n.sf(), 7);
 
         let n2 = SciDecimal::from(dec!(0.001230));
-        assert_eq!(n2.sigfigs(), 4);
+        assert_eq!(n2.sf(), 4);
 
         let n3 = SciDecimal::new(1230, 0);
-        assert_eq!(n3.sigfigs(), 4);
+        assert_eq!(n3.sf(), 4);
+    }
+
+    #[test]
+    fn dp() {
+        assert_eq!(sci!(0.2).dp(), 1);
+        assert_eq!(sci!(0.02).dp(), 2);
+        assert_eq!(sci!(0.020).dp(), 3);
+        assert_eq!(sci!(0.021).dp(), 3);
+        assert_eq!(sci!(2).dp(), 0);
+        assert_eq!(sci!(20).dp(), 0);
+        assert_eq!(sci!(2.0e5).dp(), 0);
+        assert_eq!(sci!(2.0).dp(), 1);
+        assert_eq!(sci!(2.0e-3).dp(), 4);
     }
 
     #[test]
@@ -2032,6 +2178,114 @@ mod tests {
         let n2 = sci!(2.69e7);
         assert_eq!(n2.to_string(), "2.69e7");
         assert_eq!(n2.increase_precision(2).to_string(), "2.6900e7");
+    }
+
+    #[test]
+    #[rustfmt::skip]
+    fn round_prec() {
+        // Next digits < half
+        let n = sci!(1.23);
+        assert_eq!(n.round_precision(-1, RoundingMode::Up),         sci!(1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::Down),       sci!(1.2));
+        assert_eq!(n.round_precision(-1, RoundingMode::Ceiling),    sci!(1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::Floor),      sci!(1.2));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfUp),     sci!(1.2));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfDown),   sci!(1.2));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfEven),   sci!(1.2));
+        // As above but negative
+        let n = sci!(-1.23);
+        assert_eq!(n.round_precision(-1, RoundingMode::Up),         sci!(-1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::Down),       sci!(-1.2));
+        assert_eq!(n.round_precision(-1, RoundingMode::Ceiling),    sci!(-1.2));
+        assert_eq!(n.round_precision(-1, RoundingMode::Floor),      sci!(-1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfUp),     sci!(-1.2));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfDown),   sci!(-1.2));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfEven),   sci!(-1.2));
+        // Different precision, next digits still < half
+        let n = sci!(1.623);
+        assert_eq!(n.round_precision(-2, RoundingMode::Up),         sci!(1.63));
+        assert_eq!(n.round_precision(-2, RoundingMode::Down),       sci!(1.62));
+        assert_eq!(n.round_precision(-2, RoundingMode::Ceiling),    sci!(1.63));
+        assert_eq!(n.round_precision(-2, RoundingMode::Floor),      sci!(1.62));
+        assert_eq!(n.round_precision(-2, RoundingMode::HalfUp),     sci!(1.62));
+        assert_eq!(n.round_precision(-2, RoundingMode::HalfDown),   sci!(1.62));
+        assert_eq!(n.round_precision(-2, RoundingMode::HalfEven),   sci!(1.62));
+        // Integers, next digits still < half
+        let n = sci!(1230);
+        assert_eq!(n.round_precision(2, RoundingMode::Up),          sci!(1300));
+        assert_eq!(n.round_precision(2, RoundingMode::Down),        sci!(1200));
+        assert_eq!(n.round_precision(2, RoundingMode::Ceiling),     sci!(1300));
+        assert_eq!(n.round_precision(2, RoundingMode::Floor),       sci!(1200));
+        assert_eq!(n.round_precision(2, RoundingMode::HalfUp),      sci!(1200));
+        assert_eq!(n.round_precision(2, RoundingMode::HalfDown),    sci!(1200));
+        assert_eq!(n.round_precision(2, RoundingMode::HalfEven),    sci!(1200));
+        // Next digits > half
+        let n = sci!(1.27);
+        assert_eq!(n.round_precision(-1, RoundingMode::Up),         sci!(1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::Down),       sci!(1.2));
+        assert_eq!(n.round_precision(-1, RoundingMode::Ceiling),    sci!(1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::Floor),      sci!(1.2));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfUp),     sci!(1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfDown),   sci!(1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfEven),   sci!(1.3));
+        // Next digits = half
+        let n = sci!(1.25);
+        assert_eq!(n.round_precision(-1, RoundingMode::Up),         sci!(1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::Down),       sci!(1.2));
+        assert_eq!(n.round_precision(-1, RoundingMode::Ceiling),    sci!(1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::Floor),      sci!(1.2));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfUp),     sci!(1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfDown),   sci!(1.2));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfEven),   sci!(1.2));
+        // Next digits = half, rounding to even goes up
+        let n = sci!(1.35);
+        assert_eq!(n.round_precision(-1, RoundingMode::Up),         sci!(1.4));
+        assert_eq!(n.round_precision(-1, RoundingMode::Down),       sci!(1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::Ceiling),    sci!(1.4));
+        assert_eq!(n.round_precision(-1, RoundingMode::Floor),      sci!(1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfUp),     sci!(1.4));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfDown),   sci!(1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfEven),   sci!(1.4));
+        // Next digits = half, negative
+        let n = sci!(-1.35);
+        assert_eq!(n.round_precision(-1, RoundingMode::Up),         sci!(-1.4));
+        assert_eq!(n.round_precision(-1, RoundingMode::Down),       sci!(-1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::Ceiling),    sci!(-1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::Floor),      sci!(-1.4));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfUp),     sci!(-1.4));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfDown),   sci!(-1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfEven),   sci!(-1.4));
+        // Next digits start with 5 but are > half
+        let n = sci!(1.252);
+        assert_eq!(n.round_precision(-1, RoundingMode::Up),         sci!(1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::Down),       sci!(1.2));
+        assert_eq!(n.round_precision(-1, RoundingMode::Ceiling),    sci!(1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::Floor),      sci!(1.2));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfUp),     sci!(1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfDown),   sci!(1.3));
+        assert_eq!(n.round_precision(-1, RoundingMode::HalfEven),   sci!(1.3));
+    }
+
+    #[test]
+    fn round_dp() {
+        assert_eq!(sci!(1.4324).round_dp(0, RoundingMode::HalfUp), sci!(1));
+        assert_eq!(sci!(1.4324).round_dp(1, RoundingMode::HalfUp), sci!(1.4));
+        assert_eq!(sci!(1.4324).round_dp(2, RoundingMode::HalfUp), sci!(1.43));
+        assert_eq!(sci!(1.4324).round_dp(3, RoundingMode::HalfUp), sci!(1.432));
+        assert_eq!(sci!(1.4324).round_dp(4, RoundingMode::HalfUp), sci!(1.4324));
+        assert_eq!(sci!(1.4324).round_dp(5, RoundingMode::HalfUp), sci!(1.43240));
+        assert_eq!(sci!(0.0024).round_dp(3, RoundingMode::HalfUp), sci!(0.002));
+        assert_eq!(sci!(0.0024).round_dp(2, RoundingMode::HalfUp), sci!(0));
+        assert_eq!(sci!(14).round_dp(0, RoundingMode::HalfUp), sci!(14));
+        assert_eq!(sci!(3.5e4).round_dp(0, RoundingMode::HalfUp), sci!(3.5e4));
+    }
+
+    #[test]
+    fn round_match_uncertainty_sf() {
+        assert_eq!(SciDecimal::from_str("1.4324(6)").unwrap().round_match_uncertainty_sf(1, RoundingMode::HalfUp), SciDecimal::from_str("1.4324(6)").unwrap());
+        assert_eq!(SciDecimal::from_str("1.4324(16)").unwrap().round_match_uncertainty_sf(1, RoundingMode::HalfUp), SciDecimal::from_str("1.432(2)").unwrap());
+        assert_eq!(SciDecimal::from_str("1.4324(386)").unwrap().round_match_uncertainty_sf(2, RoundingMode::HalfUp), SciDecimal::from_str("1.432(39)").unwrap());
+        assert_eq!(SciDecimal::from_str("1.4324(16)e6").unwrap().round_match_uncertainty_sf(1, RoundingMode::HalfUp), SciDecimal::from_str("1.432(2)e6").unwrap());
     }
 
     #[test]
