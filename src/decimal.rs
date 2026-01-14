@@ -861,7 +861,6 @@ impl Num for SciDecimal {
     }
 }
 
-// Methods that will belong to the Float trait when we implement it properly later
 //impl Float for SciDecimal {
 #[allow(unused)]
 impl SciDecimal {
@@ -1041,6 +1040,10 @@ impl SciDecimal {
         todo!()
     }
 
+    fn cbrt(self) -> Self {
+        todo!()
+    }
+
     pub fn exp(self) -> Self {
         if !self.is_normal() {
             todo!("Special values are not yet handled correctly by this method!")
@@ -1105,10 +1108,6 @@ impl SciDecimal {
     }
 
     fn abs_sub(self, other: Self) -> Self {
-        todo!()
-    }
-
-    fn cbrt(self) -> Self {
         todo!()
     }
 
@@ -2365,13 +2364,15 @@ mod tests {
         );
         // Uncertainty less precise than number
         assert_eq!(
-            sci!(1.3424).with_uncertainty(sci!(0.03))
+            sci!(1.3424)
+                .with_uncertainty(sci!(0.03))
                 .round_match_uncertainty(RoundingMode::HalfUp),
             SciDecimal::from_str("1.34(3)").unwrap()
         );
         // Uncertainty more precise than number
         assert_eq!(
-            sci!(1.3424).with_uncertainty(sci!(0.0338274))
+            sci!(1.3424)
+                .with_uncertainty(sci!(0.0338274))
                 .round_match_uncertainty(RoundingMode::HalfUp),
             SciDecimal::from_str("1.3424000(338274)").unwrap()
         );
@@ -2415,17 +2416,20 @@ mod tests {
     #[test]
     fn round_uncertainty_precision() {
         assert_eq!(
-            sci!(1.4324).with_uncertainty(sci!(0.0016))
+            sci!(1.4324)
+                .with_uncertainty(sci!(0.0016))
                 .round_uncertainty_precision(-3, RoundingMode::HalfUp),
             sci!(1.4324).with_uncertainty(sci!(0.002))
         );
         assert_eq!(
-            sci!(1.4324).with_uncertainty(sci!(0.0386))
+            sci!(1.4324)
+                .with_uncertainty(sci!(0.0386))
                 .round_uncertainty_precision(-3, RoundingMode::HalfUp),
             sci!(1.4324).with_uncertainty(sci!(0.039))
         );
         assert_eq!(
-            sci!(1.4324).with_uncertainty(sci!(0.016))
+            sci!(1.4324)
+                .with_uncertainty(sci!(0.016))
                 .round_uncertainty_precision(-1, RoundingMode::HalfUp),
             sci!(1.4324).with_uncertainty(sci!(0.0))
         );
@@ -2434,7 +2438,8 @@ mod tests {
     #[test]
     fn round_uncertainty_dp() {
         assert_eq!(
-            sci!(1.4324).with_uncertainty(sci!(0.0386))
+            sci!(1.4324)
+                .with_uncertainty(sci!(0.0386))
                 .round_uncertainty_dp(3, RoundingMode::HalfUp),
             sci!(1.4324).with_uncertainty(sci!(0.039))
         );
@@ -2443,17 +2448,20 @@ mod tests {
     #[test]
     fn round_uncertainty_sf() {
         assert_eq!(
-            sci!(1.4324).with_uncertainty(sci!(0.0016))
+            sci!(1.4324)
+                .with_uncertainty(sci!(0.0016))
                 .round_uncertainty_sf(1, RoundingMode::HalfUp),
             sci!(1.4324).with_uncertainty(sci!(0.002))
         );
         assert_eq!(
-            sci!(1.4324).with_uncertainty(sci!(0.0386))
+            sci!(1.4324)
+                .with_uncertainty(sci!(0.0386))
                 .round_uncertainty_sf(2, RoundingMode::HalfUp),
             sci!(1.4324).with_uncertainty(sci!(0.039))
         );
         assert_eq!(
-            sci!(1.4324).with_uncertainty(sci!(0.016))
+            sci!(1.4324)
+                .with_uncertainty(sci!(0.016))
                 .round_uncertainty_sf(3, RoundingMode::HalfUp),
             sci!(1.4324).with_uncertainty(sci!(0.0160))
         );
@@ -2475,13 +2483,15 @@ mod tests {
         );
         // Uncertainty less precise than number
         assert_eq!(
-            sci!(1.3424).with_uncertainty(sci!(0.03))
+            sci!(1.3424)
+                .with_uncertainty(sci!(0.03))
                 .round_uncertainty_match_number(RoundingMode::HalfUp),
             SciDecimal::from_str("1.3424(300)").unwrap()
         );
         // Uncertainty more precise than number
         assert_eq!(
-            sci!(1.3424).with_uncertainty(sci!(0.0338724))
+            sci!(1.3424)
+                .with_uncertainty(sci!(0.0338724))
                 .round_uncertainty_match_number(RoundingMode::HalfUp),
             SciDecimal::from_str("1.3424(339)").unwrap()
         );

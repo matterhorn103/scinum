@@ -8,16 +8,79 @@ use std::{
     str::FromStr,
 };
 
-use num_traits::{FloatConst, Inv, Num, One, Pow, Zero};
+use num_traits::{Float, FloatConst, Inv, Num, One, Pow, Zero};
 
 use crate::{RoundingMode, SciDecimal, SciNum, error::SciNumError};
 
-#[derive(Debug, Clone, Copy)]
+/// A binary floating point number with an associated uncertainty.
+///
+/// Wraps the native `f64` type.
+#[derive(Debug, Clone, Copy, serde_with::DeserializeFromStr, serde_with::SerializeDisplay)]
 pub struct SciFloat {
     number: f64,
     uncertainty: f64,
 }
 
+// Constants that don't belong to specific traits
+impl SciFloat {
+    /// The lowest supported number.
+    pub const MIN: SciFloat = SciFloat {
+        number: f64::MIN,
+        uncertainty: 0.0,
+    };
+
+    /// The highest supported number.
+    pub const MAX: SciFloat = SciFloat {
+        number: f64::MAX,
+        uncertainty: 0.0,
+    };
+
+    /// The `SciFloat` representation of `NaN`, "not a number".
+    pub const NAN: SciFloat = SciFloat {
+        number: f64::NAN,
+        uncertainty: 0.0,
+    };
+
+    /// The `SciFloat` representation of positive infinity.
+    pub const INFINITY: SciFloat = SciFloat {
+        number: f64::INFINITY,
+        uncertainty: 0.0,
+    };
+
+    /// The `SciFloat` representation of negative infinity.
+    pub const NEG_INFINITY: SciFloat = SciFloat {
+        number: f64::NEG_INFINITY,
+        uncertainty: 0.0,
+    };
+
+    /// The `SciFloat` representation of negative zero.
+    pub const NEG_ZERO: SciFloat = SciFloat {
+        number: -0.0,
+        uncertainty: 0.0,
+    };
+}
+
+impl Zero for SciFloat {
+    #[inline]
+    fn zero() -> Self {
+        Self::ZERO
+    }
+
+    /// Returns true if the `SciFloat` is equal to zero, regardless of any
+    /// uncertainty.
+    fn is_zero(&self) -> bool {
+        self.number.is_zero()
+    }
+}
+
+impl One for SciFloat {
+    #[inline]
+    fn one() -> Self {
+        Self::ONE
+    }
+}
+
+// Instantiation
 impl SciFloat {
     pub fn new(number: f64) -> Self {
         Self {
@@ -32,13 +95,10 @@ impl SciFloat {
             uncertainty,
         }
     }
+}
 
-    /// Returns true if the `SciDecimal` has an uncertainty of zero.
-    #[inline]
-    pub fn is_exact(&self) -> bool {
-        self.uncertainty == 0.0
-    }
-
+// Precision, figures, and rounding
+impl SciFloat {
     /// Removes significant figures from the significand to give a new `SciFloat`
     /// with the specified number.
     ///
@@ -67,29 +127,6 @@ impl SciFloat {
 impl SciNum for SciFloat {
     type Number = f64;
 
-    #[inline]
-    fn number(&self) -> f64 {
-        self.number
-    }
-
-    #[inline]
-    fn uncertainty(&self) -> f64 {
-        self.uncertainty
-    }
-
-    #[inline]
-    fn relative_uncertainty(&self) -> f64 {
-        self.uncertainty / self.number.abs()
-    }
-
-    #[inline]
-    fn with_uncertainty(self, uncertainty: f64) -> Self {
-        Self {
-            number: self.number,
-            uncertainty,
-        }
-    }
-
     const ZERO: Self = SciFloat {
         number: 0.0,
         uncertainty: 0.0,
@@ -99,6 +136,56 @@ impl SciNum for SciFloat {
         number: 1.0,
         uncertainty: 0.0,
     };
+
+    /// Returns the number as an `f64`.
+    #[inline]
+    fn number(&self) -> f64 {
+        self.number
+    }
+
+    /// Returns the absolute uncertainty as an `f64`.
+    ///
+    /// The uncertainty is always positive.
+    ///
+    /// An infinity always has an uncertainty of (positive) infinity, and `NaN`
+    /// always has an uncertainty of `NaN`.
+    #[inline]
+    fn uncertainty(&self) -> f64 {
+        if self.is_nan() {
+            f64::NAN
+        } else if self.is_infinite() {
+            f64::INFINITY
+        } else {
+            self.uncertainty.abs()
+        }
+    }
+
+    /// Returns the relative uncertainty as an `f64`.
+    ///
+    /// The relative uncertainty is always positive.
+    #[inline]
+    fn relative_uncertainty(&self) -> f64 {
+        self.uncertainty / self.number.abs()
+    }
+
+    /// Creates a new `SciFloat` with the same number but the provided
+    /// uncertainty.
+    #[inline]
+    fn with_uncertainty(self, uncertainty: f64) -> Self {
+        Self {
+            number: self.number,
+            uncertainty: uncertainty.abs(),
+        }
+    }
+
+    /// Returns true if the `SciFloat` has an uncertainty of zero.
+    #[inline]
+    fn is_exact(&self) -> bool {
+        if !self.is_finite() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        self.uncertainty == 0.0
+    }
 
     fn round_precision(self, prec: i16, mode: RoundingMode) -> Self {
         todo!()
@@ -137,54 +224,6 @@ impl SciNum for SciFloat {
     }
 }
 
-impl From<f64> for SciFloat {
-    fn from(n: f64) -> Self {
-        Self {
-            number: n,
-            uncertainty: 0.0,
-        }
-    }
-}
-
-impl From<f32> for SciFloat {
-    fn from(n: f32) -> Self {
-        Self {
-            number: n.into(),
-            uncertainty: 0.0,
-        }
-    }
-}
-
-impl TryFrom<SciDecimal> for SciFloat {
-    type Error = ParseFloatError;
-
-    fn try_from(n: SciDecimal) -> Result<Self, Self::Error> {
-        let number: f64 = n.number().to_string().parse()?;
-        let uncertainty: f64 = n.uncertainty().to_string().parse()?;
-        Ok(Self {
-            number,
-            uncertainty,
-        })
-    }
-}
-
-macro_rules! impl_from_int {
-    ($T:ty) => {
-        impl From<$T> for SciFloat {
-            fn from(t: $T) -> Self {
-                Self::new(t.into())
-            }
-        }
-    };
-}
-
-impl_from_int!(i8);
-impl_from_int!(i16);
-impl_from_int!(i32);
-impl_from_int!(u8);
-impl_from_int!(u16);
-impl_from_int!(u32);
-
 impl Num for SciFloat {
     type FromStrRadixErr = <f64 as Num>::FromStrRadixErr;
 
@@ -196,138 +235,119 @@ impl Num for SciFloat {
     }
 }
 
-impl Zero for SciFloat {
-    fn zero() -> Self {
-        Self {
-            number: 0.0,
-            uncertainty: 0.0,
-        }
-    }
-
-    fn is_zero(&self) -> bool {
-        self.number.is_zero()
-    }
-}
-
-impl One for SciFloat {
-    fn one() -> Self {
-        Self {
-            number: 1.0,
-            uncertainty: 0.0,
-        }
-    }
-}
-
-// Methods that will belong to the Float trait if we implement it properly later
-// impl Float for SciFloat {
+//impl Float for SciFloat {
+#[allow(unused)]
 impl SciFloat {
-    //#[inline]
-    //pub fn nan() -> Self {
-    //    Self::NAN
-    //}
-
-    //#[inline]
-    //pub fn infinity() -> Self {
-    //    Self::INFINITY
-    //}
-
-    //#[inline]
-    //pub fn neg_infinity() -> Self {
-    //    Self::NEG_INFINITY
-    //}
-
-    //#[inline]
-    //pub fn neg_zero() -> Self {
-    //    Self::NEG_ZERO
-    //}
-
-    //fn min_value() -> Self {
-    //    todo!()
-    //}
-
-    //fn min_positive_value() -> Self {
-    //    todo!()
-    //}
-
-    //fn max_value() -> Self {
-    //    todo!()
-    //}
+    #[inline]
+    fn nan() -> Self {
+        Self::NAN
+    }
 
     #[inline]
-    pub fn is_nan(self) -> bool {
+    fn infinity() -> Self {
+        Self::INFINITY
+    }
+
+    #[inline]
+    fn neg_infinity() -> Self {
+        Self::NEG_INFINITY
+    }
+
+    #[inline]
+    fn neg_zero() -> Self {
+        Self::NEG_ZERO
+    }
+
+    fn min_value() -> Self {
+        todo!()
+    }
+
+    fn min_positive_value() -> Self {
+        todo!()
+    }
+
+    fn max_value() -> Self {
+        todo!()
+    }
+
+    #[inline]
+    fn is_nan(self) -> bool {
         self.number.is_nan()
     }
 
     #[inline]
-    pub fn is_infinite(self) -> bool {
+    fn is_infinite(self) -> bool {
         self.number.is_infinite()
     }
 
     #[inline]
-    pub fn is_finite(self) -> bool {
-        self.number.is_infinite()
+    fn is_finite(self) -> bool {
+        self.number.is_finite()
     }
 
     #[inline]
-    pub fn is_normal(self) -> bool {
+    fn is_normal(self) -> bool {
         self.number.is_normal()
     }
 
     #[inline]
-    pub fn classify(self) -> FpCategory {
+    fn classify(self) -> FpCategory {
         self.number.classify()
     }
 
-    //fn floor(self) -> Self {
-    //    todo!()
-    //}
+    fn floor(self) -> Self {
+        todo!()
+    }
 
-    //fn ceil(self) -> Self {
-    //    todo!()
-    //}
+    fn ceil(self) -> Self {
+        todo!()
+    }
 
-    //fn round(self) -> Self {
-    //    todo!()
-    //}
+    fn round(self) -> Self {
+        todo!()
+    }
 
-    //fn trunc(self) -> Self {
-    //    todo!()
-    //}
+    fn trunc(self) -> Self {
+        todo!()
+    }
 
-    //fn fract(self) -> Self {
-    //    todo!()
-    //}
+    fn fract(self) -> Self {
+        todo!()
+    }
 
-    pub fn abs(self) -> Self {
+    fn abs(self) -> Self {
         Self {
             number: self.number.abs(),
             uncertainty: self.uncertainty,
         }
     }
 
-    //fn signum(self) -> Self {
-    //    todo!()
-    //}
+    #[inline]
+    fn signum(self) -> Self {
+        self.number.signum().into()
+    }
 
-    //fn is_sign_positive(self) -> bool {
-    //    todo!()
-    //}
+    #[inline]
+    fn is_sign_positive(self) -> bool {
+        self.number.is_sign_positive()
+    }
 
-    //fn is_sign_negative(self) -> bool {
-    //    todo!()
-    //}
+    #[inline]
+    fn is_sign_negative(self) -> bool {
+        self.number.is_sign_negative()
+    }
 
-    //fn mul_add(self, a: Self, b: Self) -> Self {
-    //    todo!()
-    //}
+    fn mul_add(self, a: Self, b: Self) -> Self {
+        todo!()
+    }
 
-    //fn recip(self) -> Self {
-    //    todo!()
-    //}
+    fn recip(self) -> Self {
+        todo!()
+    }
 
     /// Raise the `SciFloat` to an integer power.
     #[inline]
-    pub fn powi(self, n: i32) -> Self {
+    fn powi(self, n: i32) -> Self {
         if !self.is_finite() {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -340,12 +360,12 @@ impl SciFloat {
         }
     }
 
-    //fn powf(self, n: Self) -> Self {
-    //    todo!()
-    //}
+    fn powf(self, n: Self) -> Self {
+        todo!()
+    }
 
     #[inline]
-    pub fn sqrt(self) -> Self {
+    fn sqrt(self) -> Self {
         if !self.is_finite() {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -358,7 +378,7 @@ impl SciFloat {
         }
     }
 
-    pub fn cbrt(self) -> Self {
+    fn cbrt(self) -> Self {
         if !self.is_finite() {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -372,7 +392,7 @@ impl SciFloat {
     }
 
     #[inline]
-    pub fn exp(self) -> Self {
+    fn exp(self) -> Self {
         if !self.is_finite() {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -385,11 +405,11 @@ impl SciFloat {
         }
     }
 
-    //fn exp2(self) -> Self {
-    //    todo!()
-    //}
+    fn exp2(self) -> Self {
+        todo!()
+    }
 
-    pub fn ln(self) -> Self {
+    fn ln(self) -> Self {
         if !self.is_finite() {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -402,15 +422,15 @@ impl SciFloat {
         }
     }
 
-    //fn log(self, base: Self) -> Self {
-    //    todo!()
-    //}
+    fn log(self, base: Self) -> Self {
+        todo!()
+    }
 
-    //fn log2(self) -> Self {
-    //    todo!()
-    //}
+    fn log2(self) -> Self {
+        todo!()
+    }
 
-    pub fn log10(self) -> Self {
+    fn log10(self) -> Self {
         if !self.is_finite() {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -423,7 +443,7 @@ impl SciFloat {
         }
     }
 
-    pub fn to_degrees(self) -> Self {
+    fn to_degrees(self) -> Self {
         if !self.is_finite() {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -436,7 +456,7 @@ impl SciFloat {
         }
     }
 
-    pub fn to_radians(self) -> Self {
+    fn to_radians(self) -> Self {
         if !self.is_finite() {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -449,25 +469,25 @@ impl SciFloat {
         }
     }
 
-    pub fn max(self, other: Self) -> Self {
+    fn max(self, other: Self) -> Self {
         match self > other {
             true => self,
             false => other,
         }
     }
 
-    pub fn min(self, other: Self) -> Self {
+    fn min(self, other: Self) -> Self {
         match self < other {
             true => self,
             false => other,
         }
     }
 
-    //fn abs_sub(self, other: Self) -> Self {
-    //    todo!()
-    //}
+    fn abs_sub(self, other: Self) -> Self {
+        todo!()
+    }
 
-    pub fn hypot(self, other: Self) -> Self {
+    fn hypot(self, other: Self) -> Self {
         if !(self.is_finite() && other.is_finite()) {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -475,12 +495,14 @@ impl SciFloat {
         if self.is_exact() {
             Self::new(result)
         } else {
-            let uncertainty = (((self.number * self.uncertainty) / result).powi(2) + ((other.number * other.uncertainty) / result).powi(2)).sqrt();
+            let uncertainty = (((self.number * self.uncertainty) / result).powi(2)
+                + ((other.number * other.uncertainty) / result).powi(2))
+            .sqrt();
             Self::new_with_uncertainty(result, uncertainty)
         }
     }
 
-    pub fn sin(self) -> Self {
+    fn sin(self) -> Self {
         if !self.is_finite() {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -493,7 +515,7 @@ impl SciFloat {
         }
     }
 
-    pub fn cos(self) -> Self {
+    fn cos(self) -> Self {
         if !self.is_finite() {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -506,7 +528,7 @@ impl SciFloat {
         }
     }
 
-    pub fn tan(self) -> Self {
+    fn tan(self) -> Self {
         if !self.is_finite() {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -519,57 +541,61 @@ impl SciFloat {
         }
     }
 
-    //fn asin(self) -> Self {
-    //    todo!()
-    //}
+    fn asin(self) -> Self {
+        todo!()
+    }
 
-    //fn acos(self) -> Self {
-    //    todo!()
-    //}
+    fn acos(self) -> Self {
+        todo!()
+    }
 
-    //fn atan(self) -> Self {
-    //    todo!()
-    //}
+    fn atan(self) -> Self {
+        todo!()
+    }
 
-    //fn atan2(self, other: Self) -> Self {
-    //    todo!()
-    //}
+    fn atan2(self, other: Self) -> Self {
+        todo!()
+    }
 
-    pub fn sin_cos(self) -> (Self, Self) {
+    fn sin_cos(self) -> (Self, Self) {
         (self.sin(), self.cos())
     }
 
-    //fn exp_m1(self) -> Self {
-    //    todo!()
-    //}
+    fn exp_m1(self) -> Self {
+        todo!()
+    }
 
-    //fn ln_1p(self) -> Self {
-    //    todo!()
-    //}
+    fn ln_1p(self) -> Self {
+        todo!()
+    }
 
-    //fn sinh(self) -> Self {
-    //    todo!()
-    //}
+    fn sinh(self) -> Self {
+        todo!()
+    }
 
-    //fn cosh(self) -> Self {
-    //    todo!()
-    //}
+    fn cosh(self) -> Self {
+        todo!()
+    }
 
-    //fn tanh(self) -> Self {
-    //    todo!()
-    //}
+    fn tanh(self) -> Self {
+        todo!()
+    }
 
-    //fn asinh(self) -> Self {
-    //    todo!()
-    //}
+    fn asinh(self) -> Self {
+        todo!()
+    }
 
-    //fn acosh(self) -> Self {
-    //    todo!()
-    //}
+    fn acosh(self) -> Self {
+        todo!()
+    }
 
-    //fn atanh(self) -> Self {
-    //    todo!()
-    //}
+    fn atanh(self) -> Self {
+        todo!()
+    }
+
+    fn integer_decode(self) -> (u64, i16, i8) {
+        todo!()
+    }
 }
 
 impl PartialEq for SciFloat {
@@ -673,7 +699,8 @@ impl Pow<Self> for SciFloat {
         } else {
             let uncertainty = result.abs()
                 * ((self.relative_uncertainty() * rhs.number).powi(2)
-                    + (self.number.ln() * rhs.uncertainty).powi(2)).sqrt();
+                    + (self.number.ln() * rhs.uncertainty).powi(2))
+                .sqrt();
             SciFloat::new_with_uncertainty(result, uncertainty)
         }
     }
@@ -746,6 +773,63 @@ impl FromStr for SciFloat {
         }
     }
 }
+
+impl From<f64> for SciFloat {
+    /// Converts an `f64` into a `SciFloat`.
+    fn from(n: f64) -> Self {
+        Self {
+            number: n,
+            uncertainty: 0.0,
+        }
+    }
+}
+
+impl From<SciFloat> for f64 {
+    #[inline]
+    fn from(n: SciFloat) -> Self {
+        n.number()
+    }
+}
+
+impl From<f32> for SciFloat {
+    /// Converts an `f32` into a `SciFloat`.
+    fn from(n: f32) -> Self {
+        Self {
+            number: n.into(),
+            uncertainty: 0.0,
+        }
+    }
+}
+
+impl TryFrom<SciDecimal> for SciFloat {
+    type Error = ParseFloatError;
+
+    fn try_from(n: SciDecimal) -> Result<Self, Self::Error> {
+        let number: f64 = n.number().to_string().parse()?;
+        let uncertainty: f64 = n.uncertainty().to_string().parse()?;
+        Ok(Self {
+            number,
+            uncertainty,
+        })
+    }
+}
+
+macro_rules! impl_from_int {
+    ($T:ty) => {
+        impl From<$T> for SciFloat {
+            fn from(t: $T) -> Self {
+                Self::new(t.into())
+            }
+        }
+    };
+}
+
+impl_from_int!(i8);
+impl_from_int!(i16);
+impl_from_int!(i32);
+impl_from_int!(u8);
+impl_from_int!(u16);
+impl_from_int!(u32);
 
 #[cfg(test)]
 mod tests {
