@@ -3,12 +3,12 @@
 
 use std::{
     fmt::Display,
-    num::ParseFloatError,
-    ops::{Add, Div, Mul, Rem, Sub},
+    num::{FpCategory, ParseFloatError},
+    ops::{Add, Div, Mul, Neg, Rem, Sub},
     str::FromStr,
 };
 
-use num_traits::{Inv, Num, One, Zero};
+use num_traits::{FloatConst, Inv, Num, One, Pow, Zero};
 
 use crate::{RoundingMode, SciDecimal, SciNum, error::SciNumError};
 
@@ -37,6 +37,30 @@ impl SciFloat {
     #[inline]
     pub fn is_exact(&self) -> bool {
         self.uncertainty == 0.0
+    }
+
+    /// Removes significant figures from the significand to give a new `SciFloat`
+    /// with the specified number.
+    ///
+    /// Equivalent to rounding towards zero.
+    ///
+    /// The uncertainty of the `SciFloat` is left unchanged.
+    pub fn trunc_sf(mut self, sf: u8) -> Self {
+        let scale = 10_f64.powi(sf as i32);
+        let mut value = self.number;
+        // If integer
+        if value.fract() != 0.0 {
+            self.number = (self.number * scale).trunc() / scale;
+            self
+        } else {
+            let mut exponent: i32 = 0;
+            while value.fract() != value {
+                value /= 10.0;
+                exponent += 1;
+            }
+            self.number = (value * scale).trunc() / 10_f64.powi(sf as i32 - exponent);
+            self
+        }
     }
 }
 
@@ -194,6 +218,360 @@ impl One for SciFloat {
     }
 }
 
+// Methods that will belong to the Float trait if we implement it properly later
+// impl Float for SciFloat {
+impl SciFloat {
+    //#[inline]
+    //pub fn nan() -> Self {
+    //    Self::NAN
+    //}
+
+    //#[inline]
+    //pub fn infinity() -> Self {
+    //    Self::INFINITY
+    //}
+
+    //#[inline]
+    //pub fn neg_infinity() -> Self {
+    //    Self::NEG_INFINITY
+    //}
+
+    //#[inline]
+    //pub fn neg_zero() -> Self {
+    //    Self::NEG_ZERO
+    //}
+
+    //fn min_value() -> Self {
+    //    todo!()
+    //}
+
+    //fn min_positive_value() -> Self {
+    //    todo!()
+    //}
+
+    //fn max_value() -> Self {
+    //    todo!()
+    //}
+
+    #[inline]
+    pub fn is_nan(self) -> bool {
+        self.number.is_nan()
+    }
+
+    #[inline]
+    pub fn is_infinite(self) -> bool {
+        self.number.is_infinite()
+    }
+
+    #[inline]
+    pub fn is_finite(self) -> bool {
+        self.number.is_infinite()
+    }
+
+    #[inline]
+    pub fn is_normal(self) -> bool {
+        self.number.is_normal()
+    }
+
+    #[inline]
+    pub fn classify(self) -> FpCategory {
+        self.number.classify()
+    }
+
+    //fn floor(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn ceil(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn round(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn trunc(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn fract(self) -> Self {
+    //    todo!()
+    //}
+
+    pub fn abs(self) -> Self {
+        Self {
+            number: self.number.abs(),
+            uncertainty: self.uncertainty,
+        }
+    }
+
+    //fn signum(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn is_sign_positive(self) -> bool {
+    //    todo!()
+    //}
+
+    //fn is_sign_negative(self) -> bool {
+    //    todo!()
+    //}
+
+    //fn mul_add(self, a: Self, b: Self) -> Self {
+    //    todo!()
+    //}
+
+    //fn recip(self) -> Self {
+    //    todo!()
+    //}
+
+    /// Raise the `SciFloat` to an integer power.
+    #[inline]
+    pub fn powi(self, n: i32) -> Self {
+        if !self.is_finite() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        let result = self.number.powi(n);
+        if self.is_exact() {
+            SciFloat::new(result)
+        } else {
+            let uncertainty = self.relative_uncertainty() * result * n as f64;
+            SciFloat::new_with_uncertainty(result, uncertainty)
+        }
+    }
+
+    //fn powf(self, n: Self) -> Self {
+    //    todo!()
+    //}
+
+    #[inline]
+    pub fn sqrt(self) -> Self {
+        if !self.is_finite() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        let result = self.number.sqrt();
+        if self.is_exact() {
+            SciFloat::new(result)
+        } else {
+            let uncertainty = (self.relative_uncertainty() * result) / (2.0);
+            SciFloat::new_with_uncertainty(result, uncertainty)
+        }
+    }
+
+    pub fn cbrt(self) -> Self {
+        if !self.is_finite() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        let result = self.number.cbrt();
+        if self.is_exact() {
+            SciFloat::new(result)
+        } else {
+            let uncertainty = (self.relative_uncertainty() * result) / (3.0);
+            SciFloat::new_with_uncertainty(result, uncertainty)
+        }
+    }
+
+    #[inline]
+    pub fn exp(self) -> Self {
+        if !self.is_finite() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        let result = self.number.exp();
+        if self.is_exact() {
+            SciFloat::new(result)
+        } else {
+            let uncertainty = result.abs() * self.uncertainty;
+            SciFloat::new_with_uncertainty(result, uncertainty)
+        }
+    }
+
+    //fn exp2(self) -> Self {
+    //    todo!()
+    //}
+
+    pub fn ln(self) -> Self {
+        if !self.is_finite() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        let result = self.number.ln();
+        if self.is_exact() {
+            SciFloat::new(result)
+        } else {
+            let uncertainty = self.relative_uncertainty();
+            SciFloat::new_with_uncertainty(result, uncertainty)
+        }
+    }
+
+    //fn log(self, base: Self) -> Self {
+    //    todo!()
+    //}
+
+    //fn log2(self) -> Self {
+    //    todo!()
+    //}
+
+    pub fn log10(self) -> Self {
+        if !self.is_finite() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        let result = self.number.log10();
+        if self.is_exact() {
+            Self::new(result)
+        } else {
+            let uncertainty = (self.relative_uncertainty() / (10.0_f64).ln());
+            Self::new_with_uncertainty(result, uncertainty)
+        }
+    }
+
+    pub fn to_degrees(self) -> Self {
+        if !self.is_finite() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        let result = self.number * (180.0 / f64::PI());
+        if self.is_exact() {
+            Self::new(result)
+        } else {
+            let uncertainty = self.uncertainty * (180.0 / f64::PI());
+            Self::new_with_uncertainty(result, uncertainty)
+        }
+    }
+
+    pub fn to_radians(self) -> Self {
+        if !self.is_finite() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        let result = self.number * (f64::PI() / 180.0);
+        if self.is_exact() {
+            Self::new(result)
+        } else {
+            let uncertainty = self.uncertainty * (f64::PI() / 180.0);
+            Self::new_with_uncertainty(result, uncertainty)
+        }
+    }
+
+    pub fn max(self, other: Self) -> Self {
+        match self > other {
+            true => self,
+            false => other,
+        }
+    }
+
+    pub fn min(self, other: Self) -> Self {
+        match self < other {
+            true => self,
+            false => other,
+        }
+    }
+
+    //fn abs_sub(self, other: Self) -> Self {
+    //    todo!()
+    //}
+
+    pub fn hypot(self, other: Self) -> Self {
+        if !(self.is_finite() && other.is_finite()) {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        let result = self.number.hypot(other.number);
+        if self.is_exact() {
+            Self::new(result)
+        } else {
+            let uncertainty = (((self.number * self.uncertainty) / result).powi(2) + ((other.number * other.uncertainty) / result).powi(2)).sqrt();
+            Self::new_with_uncertainty(result, uncertainty)
+        }
+    }
+
+    pub fn sin(self) -> Self {
+        if !self.is_finite() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        let result = self.number.sin();
+        if self.is_exact() {
+            Self::new(result)
+        } else {
+            let uncertainty = (self.number.cos() * self.uncertainty).abs();
+            Self::new_with_uncertainty(result, uncertainty)
+        }
+    }
+
+    pub fn cos(self) -> Self {
+        if !self.is_finite() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        let result = self.number.cos();
+        if self.is_exact() {
+            Self::new(result)
+        } else {
+            let uncertainty = (self.number.sin() * self.uncertainty).abs();
+            Self::new_with_uncertainty(result, uncertainty)
+        }
+    }
+
+    pub fn tan(self) -> Self {
+        if !self.is_finite() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        let result = self.number.tan();
+        if self.is_exact() {
+            Self::new(result)
+        } else {
+            let uncertainty = ((1_f64 / (self.number.cos().powi(2))) * self.uncertainty).abs();
+            Self::new_with_uncertainty(result, uncertainty)
+        }
+    }
+
+    //fn asin(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn acos(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn atan(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn atan2(self, other: Self) -> Self {
+    //    todo!()
+    //}
+
+    pub fn sin_cos(self) -> (Self, Self) {
+        (self.sin(), self.cos())
+    }
+
+    //fn exp_m1(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn ln_1p(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn sinh(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn cosh(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn tanh(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn asinh(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn acosh(self) -> Self {
+    //    todo!()
+    //}
+
+    //fn atanh(self) -> Self {
+    //    todo!()
+    //}
+}
+
 impl PartialEq for SciFloat {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
@@ -280,11 +658,74 @@ impl Rem for SciFloat {
     }
 }
 
+impl Pow<Self> for SciFloat {
+    type Output = Self;
+
+    /// Raise the `SciFloat` to a `SciFloat` power.
+    /// Currently missing correlated uncertainties.
+    fn pow(self, rhs: Self) -> Self {
+        if !(self.is_finite() && rhs.is_finite()) {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        let result = self.number.pow(rhs.number);
+        if self.is_exact() {
+            SciFloat::new(result)
+        } else {
+            let uncertainty = result.abs()
+                * ((self.relative_uncertainty() * rhs.number).powi(2)
+                    + (self.number.ln() * rhs.uncertainty).powi(2)).sqrt();
+            SciFloat::new_with_uncertainty(result, uncertainty)
+        }
+    }
+}
+
+impl Pow<Self> for &SciFloat {
+    type Output = SciFloat;
+
+    fn pow(self, rhs: Self) -> SciFloat {
+        (*self).pow(*rhs)
+    }
+}
+
+impl Neg for SciFloat {
+    type Output = Self;
+
+    #[inline]
+    fn neg(self) -> Self {
+        Self {
+            number: -self.number,
+            ..self
+        }
+    }
+}
+
+impl Neg for &SciFloat {
+    type Output = SciFloat;
+
+    #[inline]
+    fn neg(self) -> SciFloat {
+        SciFloat {
+            number: -self.number,
+            ..*self
+        }
+    }
+}
+
 impl Inv for SciFloat {
     type Output = Self;
 
+    #[inline]
     fn inv(self) -> Self {
-        Self::one() / self
+        Self::ONE / self
+    }
+}
+
+impl Inv for &SciFloat {
+    type Output = SciFloat;
+
+    #[inline]
+    fn inv(self) -> SciFloat {
+        SciFloat::ONE / *self
     }
 }
 
@@ -389,10 +830,29 @@ mod tests {
         assert_ne!(SciFloat::new(3.0), SciFloat::new(-3.0));
         // Same value but different precision
         assert_eq!(SciFloat::new(200e3), SciFloat::new(2e5));
-
         // How is this different than the previous one?
         // Same value but different precision, small numbers
         //assert_eq!(SciFloat::new(200, 3), SciFloat::new(2, 5));
+    }
+
+    #[test]
+    fn truncate() {
+        // Positive
+        let n = SciFloat::new(25.6949);
+        assert_eq!(n.trunc_sf(2), SciFloat::new(25.69));
+        assert_eq!(n.trunc_sf(3), SciFloat::new(25.694));
+        // Negative
+        let n = SciFloat::new(-3.794718);
+        assert_eq!(n.trunc_sf(4), SciFloat::new(-3.7947));
+        assert_eq!(n.trunc_sf(3), SciFloat::new(-3.794));
+        // Integer
+        let n = SciFloat::new(4327890.0);
+        assert_eq!(n.trunc_sf(4), SciFloat::new(4.327e6));
+        assert_eq!(n.trunc_sf(5), SciFloat::new(4.3278e6));
+        // Smaller than 1
+        let n = SciFloat::new(0.4327890);
+        assert_eq!(n.trunc_sf(4), SciFloat::new(4.327e-1));
+        assert_eq!(n.trunc_sf(5), SciFloat::new(4.3278e-1));
     }
 
     #[test]
@@ -496,6 +956,72 @@ mod tests {
         assert_eq!(result, SciFloat::new(1.5));
         assert_eq!(result.uncertainty(), 0.291547594742265);
     }
+
+    #[test]
+    fn powi_exact() {
+        let n = SciFloat::new(4.0);
+        assert_eq!(n.powi(2), SciFloat::new(16.));
+        assert_eq!(n.powi(3), SciFloat::new(64.));
+        assert_eq!(n.powi(-1), SciFloat::new(0.25));
+        assert_eq!(n.powi(-2), SciFloat::new(0.0625));
+    }
+
+    #[test]
+    fn powi_with_uncertainty() {
+        let n = SciFloat::new_with_uncertainty(20.0, 2.0);
+        let result = n.powi(2);
+        assert_eq!(result.number(), 400.0);
+        assert_eq!(result.uncertainty(), 80.0);
+    }
+
+    #[test]
+    fn inv() {
+        assert_eq!(SciFloat::new(4.0).inv(), SciFloat::new(25e-2));
+        assert_eq!(SciFloat::new(5e-1).inv(), SciFloat::new(2.0));
+    }
+
+    #[test]
+    fn neg() {
+        let n_pos = SciFloat::new(4.0);
+        let n_neg = n_pos.neg();
+        assert_eq!(n_neg, SciFloat::new(-4.0));
+        assert_eq!(n_neg.number(), -4.0);
+        let n_roundtrip = n_neg.neg();
+        assert_eq!(n_roundtrip, n_pos);
+    }
+
+    #[test]
+    fn natural_log() {
+        let n1 = SciFloat::new_with_uncertainty(20.0, 2.0);
+        let n2 = SciFloat::new_with_uncertainty(30.0, 5.0);
+        let ratio = n1 / n2;
+        let result = ratio.ln();
+        assert_eq!(result.uncertainty(), 0.19436506316151);
+    }
+
+    #[test]
+    fn log_base10() {
+        let n1 = SciFloat::new_with_uncertainty(20.0, 2.0);
+        let n2 = SciFloat::new_with_uncertainty(30.0, 5.0);
+        let ratio = n1 / n2;
+        let result = ratio.log10();
+        assert_eq!(result.uncertainty(), 0.08441167440582079);
+    }
+
+    #[test]
+    fn exponential() {
+        let n1 = SciFloat::new_with_uncertainty(20.0, 2.0);
+        let n2 = SciFloat::new_with_uncertainty(30.0, 5.0);
+        let ratio = n1 / n2;
+        let result = ratio.exp();
+        assert_eq!(result.uncertainty(), 0.2523809666076101);
+    }
+
+    //#[test]
+    //fn debug() {
+    //    let n = SciFloat::new_with_uncertainty(20, 2, 0);
+    //    assert_eq!(format!("{n:?}"), "SciFloat { number: 20, uncertainty: 2 }");
+    //}
 
     #[test]
     fn display() {
