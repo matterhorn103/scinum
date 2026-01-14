@@ -485,7 +485,11 @@ impl SciDecimal {
         if !self.is_normal() {
             todo!("Special values are not yet handled correctly by this method!")
         }
-        if self.is_exact() { None } else { Some(self.exponent() + self.uncertainty_scale as i16) }
+        if self.is_exact() {
+            None
+        } else {
+            Some(self.exponent() + self.uncertainty_scale as i16)
+        }
     }
 
     /// Returns the number of significant decimal digits in the significand.
@@ -708,19 +712,23 @@ impl SciNum for SciDecimal {
         }
         self.uncertainty == 0
     }
-    
+
     fn round_precision(self, prec: i16, mode: RoundingMode) -> Self {
         if !self.is_normal() {
             todo!("Special values are not yet handled correctly by this method!")
         }
         if self.exponent() == prec {
-            return self
+            return self;
         }
         let mut new = self;
         let current_prec = new.exponent();
         if prec < current_prec {
             // Simply add zeros to fulfil request
-            new = new.increase_precision((current_prec - prec).try_into().expect("Requested change in precision must be less than 256 places/figures!"));
+            new = new.increase_precision(
+                (current_prec - prec)
+                    .try_into()
+                    .expect("Requested change in precision must be less than 256 places/figures!"),
+            );
         } else {
             // Decrease precision while following the specified rounding mode
             let shifted = prec - current_prec; // Places to remove, will be a positive number
@@ -731,35 +739,37 @@ impl SciNum for SciDecimal {
                 // No rounding to be done, we only removed significant zeros
             } else {
                 match mode {
-                    RoundingMode::HalfUp => {
-                        match cmp_tie(removed_digits) {
-                            Ordering::Less => {},
-                            Ordering::Equal => new_sig += 1,
-                            Ordering::Greater => new_sig += 1,
-                        }
+                    RoundingMode::HalfUp => match cmp_tie(removed_digits) {
+                        Ordering::Less => {}
+                        Ordering::Equal => new_sig += 1,
+                        Ordering::Greater => new_sig += 1,
                     },
-                    RoundingMode::HalfDown => {
-                        match cmp_tie(removed_digits) {
-                            Ordering::Less => {},
-                            Ordering::Equal => {},
-                            Ordering::Greater => new_sig += 1,
-                        }
+                    RoundingMode::HalfDown => match cmp_tie(removed_digits) {
+                        Ordering::Less => {}
+                        Ordering::Equal => {}
+                        Ordering::Greater => new_sig += 1,
                     },
-                    RoundingMode::HalfEven => {
-                        match cmp_tie(removed_digits) {
-                            Ordering::Less => {},
-                            Ordering::Equal => {
-                                if !new_sig.is_multiple_of(2) {
-                                    new_sig += 1;
-                                }
-                            },
-                            Ordering::Greater => new_sig += 1,
+                    RoundingMode::HalfEven => match cmp_tie(removed_digits) {
+                        Ordering::Less => {}
+                        Ordering::Equal => {
+                            if !new_sig.is_multiple_of(2) {
+                                new_sig += 1;
+                            }
                         }
+                        Ordering::Greater => new_sig += 1,
                     },
                     RoundingMode::Up => new_sig += 1,
-                    RoundingMode::Down => {},
-                    RoundingMode::Ceiling => if !new.negative { new_sig += 1 },
-                    RoundingMode::Floor => if new.negative { new_sig += 1 },
+                    RoundingMode::Down => {}
+                    RoundingMode::Ceiling => {
+                        if !new.negative {
+                            new_sig += 1
+                        }
+                    }
+                    RoundingMode::Floor => {
+                        if new.negative {
+                            new_sig += 1
+                        }
+                    }
                 }
             }
             new.significand = new_sig;
@@ -770,13 +780,13 @@ impl SciNum for SciDecimal {
         }
         new
     }
-    
+
     #[inline]
     fn round_dp(self, dp: u16, mode: RoundingMode) -> Self {
         let desired_prec = (dp as i16).neg();
         self.round_precision(desired_prec, mode)
     }
-    
+
     #[inline]
     fn round_sf(self, sf: u8, mode: RoundingMode) -> Self {
         let current_sf = self.sf(); // e.g. 3
@@ -784,7 +794,7 @@ impl SciNum for SciDecimal {
         let desired_prec = self.precision() + prec_change;
         self.round_precision(desired_prec, mode)
     }
-    
+
     #[inline]
     fn round_match_uncertainty(self, mode: RoundingMode) -> Self {
         if self.is_exact() {
@@ -793,30 +803,51 @@ impl SciNum for SciDecimal {
             self.round_precision(self.precision_uncertainty().unwrap(), mode)
         }
     }
-    
+
     #[inline]
     fn round_match_uncertainty_sf(self, sf: u8, mode: RoundingMode) -> Self {
-        self.with_uncertainty(self.uncertainty().round_sf(sf, mode)).round_match_uncertainty(mode)
+        if self.is_exact() {
+            self
+        } else {
+            self.with_uncertainty(self.uncertainty().round_sf(sf, mode))
+                .round_match_uncertainty(mode)
+        }
     }
-    
+
     #[inline]
     fn round_uncertainty_precision(self, prec: i16, mode: RoundingMode) -> Self {
-        self.with_uncertainty(self.uncertainty().round_precision(prec, mode))
+        if self.is_exact() {
+            self
+        } else {
+            self.with_uncertainty(self.uncertainty().round_precision(prec, mode))
+        }
     }
-    
+
     #[inline]
     fn round_uncertainty_dp(self, dp: u16, mode: RoundingMode) -> Self {
-        self.with_uncertainty(self.uncertainty().round_dp(dp, mode))
+        if self.is_exact() {
+            self
+        } else {
+            self.with_uncertainty(self.uncertainty().round_dp(dp, mode))
+        }
     }
-    
+
     #[inline]
     fn round_uncertainty_sf(self, sf: u8, mode: RoundingMode) -> Self {
-        self.with_uncertainty(self.uncertainty().round_sf(sf, mode))
+        if self.is_exact() {
+            self
+        } else {
+            self.with_uncertainty(self.uncertainty().round_sf(sf, mode))
+        }
     }
-    
+
     #[inline]
     fn round_uncertainty_match_number(self, mode: RoundingMode) -> Self {
-        self.with_uncertainty(self.uncertainty().round_precision(self.precision(), mode))
+        if self.is_exact() {
+            self
+        } else {
+            self.with_uncertainty(self.uncertainty().round_precision(self.precision(), mode))
+        }
     }
 }
 
@@ -1671,7 +1702,7 @@ impl Inv for &SciDecimal {
 impl fmt::Display for SciDecimal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Handle NaN
-        if self.nan{
+        if self.nan {
             return write!(f, "NaN");
         }
         // Get sign character
@@ -1822,9 +1853,9 @@ impl TryFrom<SciDecimal> for Decimal {
 
     /// Attempts to convert a `SciDecimal` into a `rust_decimal::Decimal`, dropping
     /// any uncertainty.
-    /// 
+    ///
     /// Currently goes via the string representation using `Decimal::from_str_exact()`.
-    /// 
+    ///
     /// Any number not representable by `Decimal` (generally because the number
     /// is outside of the range 10<sup>−28</sup> to 10<sup>28</sup>) will lead to
     /// this function failing.
@@ -2273,19 +2304,188 @@ mod tests {
         assert_eq!(sci!(1.4324).round_dp(2, RoundingMode::HalfUp), sci!(1.43));
         assert_eq!(sci!(1.4324).round_dp(3, RoundingMode::HalfUp), sci!(1.432));
         assert_eq!(sci!(1.4324).round_dp(4, RoundingMode::HalfUp), sci!(1.4324));
-        assert_eq!(sci!(1.4324).round_dp(5, RoundingMode::HalfUp), sci!(1.43240));
+        assert_eq!(
+            sci!(1.4324).round_dp(5, RoundingMode::HalfUp),
+            sci!(1.43240)
+        );
         assert_eq!(sci!(0.0024).round_dp(3, RoundingMode::HalfUp), sci!(0.002));
         assert_eq!(sci!(0.0024).round_dp(2, RoundingMode::HalfUp), sci!(0));
+        assert_eq!(sci!(1.435).round_dp(2, RoundingMode::HalfUp), sci!(1.44));
+        assert_eq!(sci!(-1.435).round_dp(2, RoundingMode::HalfUp), sci!(-1.44));
         assert_eq!(sci!(14).round_dp(0, RoundingMode::HalfUp), sci!(14));
         assert_eq!(sci!(3.5e4).round_dp(0, RoundingMode::HalfUp), sci!(3.5e4));
+        assert_eq!(sci!(9.96).round_dp(1, RoundingMode::HalfUp), sci!(10.0));
+    }
+
+    #[test]
+    fn round_sf() {
+        assert_eq!(sci!(1.4324).round_sf(1, RoundingMode::HalfUp), sci!(1));
+        assert_eq!(sci!(1.4324).round_sf(2, RoundingMode::HalfUp), sci!(1.4));
+        assert_eq!(sci!(1.4924).round_sf(2, RoundingMode::HalfUp), sci!(1.5));
+        assert_eq!(sci!(1.4324).round_sf(3, RoundingMode::HalfUp), sci!(1.43));
+        assert_eq!(sci!(1.5324).round_sf(1, RoundingMode::HalfUp), sci!(2));
+        assert_eq!(sci!(1.5324).round_sf(2, RoundingMode::HalfUp), sci!(1.5));
+        assert_eq!(
+            sci!(0.001234).round_sf(2, RoundingMode::HalfUp),
+            sci!(0.0012)
+        );
+        assert_eq!(
+            sci!(0.001264).round_sf(2, RoundingMode::HalfUp),
+            sci!(0.0013)
+        );
+        assert_eq!(sci!(1.45).round_sf(2, RoundingMode::HalfUp), sci!(1.5));
+        assert_eq!(sci!(1.45).round_sf(2, RoundingMode::HalfDown), sci!(1.4));
+        assert_eq!(sci!(1.45).round_sf(2, RoundingMode::HalfEven), sci!(1.4));
+        assert_eq!(sci!(1.55).round_sf(2, RoundingMode::HalfEven), sci!(1.6));
+        assert_eq!(sci!(1.4354).round_sf(3, RoundingMode::HalfDown), sci!(1.44));
+        assert_eq!(sci!(0.0024).round_sf(1, RoundingMode::HalfUp), sci!(0.002));
+        assert_eq!(sci!(0.0024).round_sf(2, RoundingMode::HalfUp), sci!(0.0024));
+        assert_eq!(sci!(12345).round_sf(3, RoundingMode::HalfUp), sci!(12300));
+        assert_eq!(sci!(12645).round_sf(3, RoundingMode::HalfUp), sci!(12600));
+        assert_eq!(sci!(99999).round_sf(2, RoundingMode::HalfUp), sci!(100000));
+        assert_eq!(sci!(1.4).round_sf(2, RoundingMode::HalfUp), sci!(1.4));
+        assert_eq!(sci!(1.4).round_sf(4, RoundingMode::HalfUp), sci!(1.400));
+        assert_eq!(sci!(9.96).round_sf(1, RoundingMode::HalfUp), sci!(10));
+        // This fails -- what would the correct behaviour be?
+        assert_eq!(sci!(9.96).round_sf(2, RoundingMode::HalfUp), sci!(10));
+    }
+
+    #[test]
+    fn round_match_uncertainty() {
+        // Exact values remain unchanged
+        assert_eq!(
+            sci!(1.4324).round_match_uncertainty(RoundingMode::HalfUp),
+            sci!(1.4324)
+        );
+        // If precisions already match, no rounding occurs
+        assert_eq!(
+            SciDecimal::from_str("1.4324(6)")
+                .unwrap()
+                .round_match_uncertainty(RoundingMode::HalfUp),
+            SciDecimal::from_str("1.4324(6)").unwrap()
+        );
+        // Uncertainty less precise than number
+        assert_eq!(
+            sci!(1.3424).with_uncertainty(sci!(0.03))
+                .round_match_uncertainty(RoundingMode::HalfUp),
+            SciDecimal::from_str("1.34(3)").unwrap()
+        );
+        // Uncertainty more precise than number
+        assert_eq!(
+            sci!(1.3424).with_uncertainty(sci!(0.0338274))
+                .round_match_uncertainty(RoundingMode::HalfUp),
+            SciDecimal::from_str("1.3424000(338274)").unwrap()
+        );
     }
 
     #[test]
     fn round_match_uncertainty_sf() {
-        assert_eq!(SciDecimal::from_str("1.4324(6)").unwrap().round_match_uncertainty_sf(1, RoundingMode::HalfUp), SciDecimal::from_str("1.4324(6)").unwrap());
-        assert_eq!(SciDecimal::from_str("1.4324(16)").unwrap().round_match_uncertainty_sf(1, RoundingMode::HalfUp), SciDecimal::from_str("1.432(2)").unwrap());
-        assert_eq!(SciDecimal::from_str("1.4324(386)").unwrap().round_match_uncertainty_sf(2, RoundingMode::HalfUp), SciDecimal::from_str("1.432(39)").unwrap());
-        assert_eq!(SciDecimal::from_str("1.4324(16)e6").unwrap().round_match_uncertainty_sf(1, RoundingMode::HalfUp), SciDecimal::from_str("1.432(2)e6").unwrap());
+        assert_eq!(
+            SciDecimal::from_str("1.4324(6)")
+                .unwrap()
+                .round_match_uncertainty_sf(1, RoundingMode::HalfUp),
+            SciDecimal::from_str("1.4324(6)").unwrap()
+        );
+        assert_eq!(
+            SciDecimal::from_str("1.4324(16)")
+                .unwrap()
+                .round_match_uncertainty_sf(1, RoundingMode::HalfUp),
+            SciDecimal::from_str("1.432(2)").unwrap()
+        );
+        assert_eq!(
+            SciDecimal::from_str("1.4324(386)")
+                .unwrap()
+                .round_match_uncertainty_sf(2, RoundingMode::HalfUp),
+            SciDecimal::from_str("1.432(39)").unwrap()
+        );
+        assert_eq!(
+            SciDecimal::from_str("1.4324(16)e6")
+                .unwrap()
+                .round_match_uncertainty_sf(1, RoundingMode::HalfUp),
+            SciDecimal::from_str("1.432(2)e6").unwrap()
+        );
+        // Rounding mode applies to both
+        assert_eq!(
+            SciDecimal::from_str("1.4025(35)")
+                .unwrap()
+                .round_match_uncertainty_sf(1, RoundingMode::HalfDown),
+            SciDecimal::from_str("1.402(3)").unwrap()
+        );
+    }
+
+    #[test]
+    fn round_uncertainty_precision() {
+        assert_eq!(
+            sci!(1.4324).with_uncertainty(sci!(0.0016))
+                .round_uncertainty_precision(-3, RoundingMode::HalfUp),
+            sci!(1.4324).with_uncertainty(sci!(0.002))
+        );
+        assert_eq!(
+            sci!(1.4324).with_uncertainty(sci!(0.0386))
+                .round_uncertainty_precision(-3, RoundingMode::HalfUp),
+            sci!(1.4324).with_uncertainty(sci!(0.039))
+        );
+        assert_eq!(
+            sci!(1.4324).with_uncertainty(sci!(0.016))
+                .round_uncertainty_precision(-1, RoundingMode::HalfUp),
+            sci!(1.4324).with_uncertainty(sci!(0.0))
+        );
+    }
+
+    #[test]
+    fn round_uncertainty_dp() {
+        assert_eq!(
+            sci!(1.4324).with_uncertainty(sci!(0.0386))
+                .round_uncertainty_dp(3, RoundingMode::HalfUp),
+            sci!(1.4324).with_uncertainty(sci!(0.039))
+        );
+    }
+
+    #[test]
+    fn round_uncertainty_sf() {
+        assert_eq!(
+            sci!(1.4324).with_uncertainty(sci!(0.0016))
+                .round_uncertainty_sf(1, RoundingMode::HalfUp),
+            sci!(1.4324).with_uncertainty(sci!(0.002))
+        );
+        assert_eq!(
+            sci!(1.4324).with_uncertainty(sci!(0.0386))
+                .round_uncertainty_sf(2, RoundingMode::HalfUp),
+            sci!(1.4324).with_uncertainty(sci!(0.039))
+        );
+        assert_eq!(
+            sci!(1.4324).with_uncertainty(sci!(0.016))
+                .round_uncertainty_sf(3, RoundingMode::HalfUp),
+            sci!(1.4324).with_uncertainty(sci!(0.0160))
+        );
+    }
+
+    #[test]
+    fn round_uncertainty_match_number() {
+        // Exact values remain unchanged
+        assert_eq!(
+            sci!(1.4324).round_uncertainty_match_number(RoundingMode::HalfUp),
+            sci!(1.4324)
+        );
+        // If precisions already match, no rounding occurs
+        assert_eq!(
+            SciDecimal::from_str("1.4324(6)")
+                .unwrap()
+                .round_uncertainty_match_number(RoundingMode::HalfUp),
+            SciDecimal::from_str("1.4324(6)").unwrap()
+        );
+        // Uncertainty less precise than number
+        assert_eq!(
+            sci!(1.3424).with_uncertainty(sci!(0.03))
+                .round_uncertainty_match_number(RoundingMode::HalfUp),
+            SciDecimal::from_str("1.3424(300)").unwrap()
+        );
+        // Uncertainty more precise than number
+        assert_eq!(
+            sci!(1.3424).with_uncertainty(sci!(0.0338724))
+                .round_uncertainty_match_number(RoundingMode::HalfUp),
+            SciDecimal::from_str("1.3424(339)").unwrap()
+        );
     }
 
     #[test]
@@ -2800,7 +3000,10 @@ mod tests {
         // NaN and infinity should match the native `f64`
         assert_eq!(SciDecimal::NAN.to_string(), f64::NAN.to_string()); // "NaN"
         assert_eq!(SciDecimal::INFINITY.to_string(), f64::INFINITY.to_string()); // "inf"
-        assert_eq!(SciDecimal::NEG_INFINITY.to_string(), f64::NEG_INFINITY.to_string()); // "-inf"
+        assert_eq!(
+            SciDecimal::NEG_INFINITY.to_string(),
+            f64::NEG_INFINITY.to_string()
+        ); // "-inf"
         // As should +/- zero, as long as there's no uncertainty
         assert_eq!(SciDecimal::ZERO.to_string(), (0.0).to_string()); // "0"
         assert_eq!(SciDecimal::NEG_ZERO.to_string(), (-0.0).to_string()); // "-0"
