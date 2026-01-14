@@ -14,7 +14,7 @@ use num_traits::{FromPrimitive, Inv, Num, One, Pow, Zero};
 use regex::Regex;
 use rust_decimal::{Decimal, MathematicalOps};
 
-use crate::{RoundingMode, SciNum, error::SciNumError, rounding::cmp_tie};
+use crate::{RoundingMode, SciFloat, SciNum, error::SciNumError, rounding::cmp_tie};
 
 /// A 16-bit signed exponent represented as a 16-bit unsigned integer by using a bias.
 ///
@@ -1894,6 +1894,53 @@ impl From<SciDecimal> for BigDecimal {
             BigInt::from_i64(n.significand_signed()).unwrap(),
             -(n.exponent()) as i64,
         )
+    }
+}
+
+/// TODO: tests
+impl From<SciFloat> for SciDecimal {
+    fn from(n: SciFloat) -> Self {
+        Self::from(n.number()).with_uncertainty(n.uncertainty().into())
+    }
+}
+
+// TODO: tests
+impl From<f64> for SciDecimal {
+    /// Converts an `f64` to a `SciDecimal`.
+    /// 
+    /// The conversion currently goes via the string representation.
+    fn from(n: f64) -> Self {
+        n.to_string().parse().expect("All possible f64 values are representable as a SciDecimal")
+    }
+}
+
+// TODO: tests
+impl From<SciDecimal> for f64 {
+    /// Converts a `SciDecimal` to an `f64`, dropping any uncertainty.
+    /// 
+    /// `n` is first rounded to 15 significant figures using `SciDecimal.round_sf()`,
+    /// which in some cases may give the result a slightly lower precision than
+    /// would theoretically be representable.
+    /// The rounding uses the `RoundingMode::HalfEven` strategy.
+    /// 
+    /// If the absolute value of `n` is larger than `f64::MAX`, the appropriate
+    /// infinity will be returned.
+    /// If the absolute value of `n` is smaller than `f64::MIN_POSITIVE`, positive
+    /// zero will be returned.
+    /// 
+    /// The conversion currently goes via the string representation.
+    fn from(n: SciDecimal) -> f64 {
+        if n.nan {
+            return f64::NAN
+        } else if n.inf || n.abs() > SciDecimal::from(f64::MAX) {
+            if n.negative { return f64::NEG_INFINITY } else { return f64::INFINITY }
+        } else if n.abs() < SciDecimal::from(f64::MIN_POSITIVE) {
+            return 0.0
+        }
+        // Otherwise, must be able to fit, if we just drop excess precision
+        // Don't waste time adding trailing zeros if we don't have to
+        let narrowed = if n.sf() > 15 { n.round_sf(15, RoundingMode::HalfEven) } else { n };
+        narrowed.to_string().parse().expect("All other possible values should fit into an f64")
     }
 }
 
