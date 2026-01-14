@@ -2346,7 +2346,6 @@ mod tests {
         assert_eq!(sci!(1.4).round_sf(2, RoundingMode::HalfUp), sci!(1.4));
         assert_eq!(sci!(1.4).round_sf(4, RoundingMode::HalfUp), sci!(1.400));
         assert_eq!(sci!(9.96).round_sf(1, RoundingMode::HalfUp), sci!(10));
-        // This fails -- what would the correct behaviour be?
         assert_eq!(sci!(9.96).round_sf(2, RoundingMode::HalfUp), sci!(10));
     }
 
