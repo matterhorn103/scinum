@@ -7,13 +7,13 @@ use num_traits::Zero;
 
 #[derive(Debug, Clone, Copy)]
 pub enum RoundingMode {
-    HalfUp,     // Traditional "rounding up"
-    HalfDown,   // Traditional "rounding down"
-    HalfEven,   // Bankers' rounding
-    Up,         // Away from zero
-    Down,       // Towards zero
-    Ceiling,    // Towards positive infinity
-    Floor,      // Towards negative infinity
+    HalfUp,   // Traditional "rounding up"
+    HalfDown, // Traditional "rounding down"
+    HalfEven, // Bankers' rounding
+    Up,       // Away from zero
+    Down,     // Towards zero
+    Ceiling,  // Towards positive infinity
+    Floor,    // Towards negative infinity
 }
 
 impl From<RoundingMode> for rust_decimal::RoundingStrategy {
@@ -45,14 +45,14 @@ impl From<RoundingMode> for bigdecimal::RoundingMode {
 }
 
 /// Determines if a remainder from rounding is above half, below half, or half.
-/// 
+///
 /// For example, when `1.4728` is rounded to two decimal places, the remainder
 /// and `digits` would be `28`, and the result would be `Ordering::Less`.
 /// For `1.4758` and `digits = 58`, the result would be `Ordering::Greater`.
 /// For `1.4750` and `digits = 50`, the result would be `Ordering::Equal`.
-/// 
+///
 /// # Panics
-/// 
+///
 /// This function panics if `digits` is `0`.
 pub(crate) fn cmp_tie(digits: u64) -> Ordering {
     let divisor = 5_u64 * 10_u64.pow(digits.ilog10());
