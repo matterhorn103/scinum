@@ -8,7 +8,7 @@ use std::{
     str::FromStr,
 };
 
-use num_traits::{ToPrimitive, FromPrimitive, Float, FloatConst, Inv, Num, One, Pow, Zero};
+use num_traits::{Float, FloatConst, Inv, Num, One, Pow, Zero};
 
 use crate::{RoundingMode, SciDecimal, SciNum, error::SciNumError};
 
@@ -235,9 +235,7 @@ impl Num for SciFloat {
     }
 }
 
-//impl Float for SciFloat {
-#[allow(unused)]
-impl SciFloat {
+impl Float for SciFloat {
     #[inline]
     fn nan() -> Self {
         Self::NAN
@@ -771,26 +769,6 @@ impl FromStr for SciFloat {
             Ok(num) => Ok(SciFloat::new(num)),
             Err(_) => Err(SciNumError::Parse(s.into())),
         }
-    }
-}
-
-impl FromPrimitive for SciFloat {
-    fn from_i64(n: i64) -> Option<Self> {
-        todo!()
-    }
-
-    fn from_u64(n: u64) -> Option<Self> {
-        todo!()
-    }
-}
-
-impl ToPrimitive for SciFloat {
-    fn to_i64(&self) -> Option<i64> {
-        todo!()
-    }
-
-    fn to_u64(&self) -> Option<u64> {
-        todo!()
     }
 }
 

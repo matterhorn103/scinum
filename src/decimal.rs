@@ -10,7 +10,7 @@ use std::{
 };
 
 use bigdecimal::{BigDecimal, num_bigint::BigInt};
-use num_traits::{FromPrimitive, Inv, Num, One, Pow, Zero};
+use num_traits::{Float, FromPrimitive, Inv, Num, One, Pow, Zero};
 use regex::Regex;
 use rust_decimal::{Decimal, MathematicalOps};
 
@@ -767,26 +767,24 @@ impl Num for SciDecimal {
     }
 }
 
-//impl Float for SciDecimal {
-#[allow(unused)]
-impl SciDecimal {
+impl Float for SciDecimal {
     #[inline]
-    pub fn nan() -> Self {
+    fn nan() -> Self {
         Self::NAN
     }
 
     #[inline]
-    pub fn infinity() -> Self {
+    fn infinity() -> Self {
         Self::INFINITY
     }
 
     #[inline]
-    pub fn neg_infinity() -> Self {
+    fn neg_infinity() -> Self {
         Self::NEG_INFINITY
     }
 
     #[inline]
-    pub fn neg_zero() -> Self {
+    fn neg_zero() -> Self {
         Self::NEG_ZERO
     }
 
@@ -803,27 +801,27 @@ impl SciDecimal {
     }
 
     #[inline]
-    pub fn is_nan(self) -> bool {
+    fn is_nan(self) -> bool {
         self.nan
     }
 
     #[inline]
-    pub fn is_infinite(self) -> bool {
+    fn is_infinite(self) -> bool {
         self.inf
     }
 
     #[inline]
-    pub fn is_finite(self) -> bool {
+    fn is_finite(self) -> bool {
         !(self.inf | self.nan)
     }
 
     #[inline]
-    pub fn is_normal(self) -> bool {
+    fn is_normal(self) -> bool {
         !(self.inf | self.nan | (self.significand == 0))
     }
 
     #[inline]
-    pub fn classify(self) -> FpCategory {
+    fn classify(self) -> FpCategory {
         if self.nan {
             FpCategory::Nan
         } else if self.inf {
@@ -844,7 +842,7 @@ impl SciDecimal {
     }
 
     fn round(self) -> Self {
-        todo!()
+        self.round_precision(0, RoundingMode::HalfEven)
     }
 
     fn trunc(self) -> Self {
@@ -855,7 +853,7 @@ impl SciDecimal {
         todo!()
     }
 
-    pub fn abs(self) -> Self {
+    fn abs(self) -> Self {
         if self.nan {
             Self::NAN
         } else {
@@ -866,7 +864,7 @@ impl SciDecimal {
         }
     }
 
-    pub fn signum(self) -> Self {
+    fn signum(self) -> Self {
         if self.nan {
             Self::NAN
         } else if self.negative {
@@ -880,7 +878,7 @@ impl SciDecimal {
     /// Zero is also considered positive.
     #[inline]
     //#[must_use]
-    pub fn is_sign_positive(self) -> bool {
+    fn is_sign_positive(self) -> bool {
         if self.is_nan() {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -891,7 +889,7 @@ impl SciDecimal {
     /// Zero is considered positive.
     #[inline]
     //#[must_use]
-    pub fn is_sign_negative(self) -> bool {
+    fn is_sign_negative(self) -> bool {
         if self.is_nan() {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -906,7 +904,7 @@ impl SciDecimal {
 
     /// Takes the reciprocoal (inverse) of the number, `1/x`.
     #[inline]
-    pub fn recip(self) -> Self {
+    fn recip(self) -> Self {
         self.inv()
     }
 
@@ -915,7 +913,7 @@ impl SciDecimal {
     /// # Panics
     ///
     /// This function panics if `n` is not within the range `-127 <= n <= 127`.
-    pub fn powi(self, n: i32) -> Self {
+    fn powi(self, n: i32) -> Self {
         if !self.is_normal() {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -938,7 +936,7 @@ impl SciDecimal {
     }
 
     #[inline]
-    pub fn powf(self, n: Self) -> Self {
+    fn powf(self, n: Self) -> Self {
         self.pow(n)
     }
 
@@ -950,7 +948,7 @@ impl SciDecimal {
         todo!()
     }
 
-    pub fn exp(self) -> Self {
+    fn exp(self) -> Self {
         if !self.is_normal() {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -967,7 +965,7 @@ impl SciDecimal {
         todo!()
     }
 
-    pub fn ln(self) -> Self {
+    fn ln(self) -> Self {
         if !self.is_normal() {
             todo!("Special values are not yet handled correctly by this method!")
         }
@@ -990,7 +988,7 @@ impl SciDecimal {
         todo!()
     }
 
-    pub fn log10(self) -> Self {
+    fn log10(self) -> Self {
         if !self.is_normal() {
             todo!("Special values are not yet handled correctly by this method!")
         }
