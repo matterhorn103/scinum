@@ -69,6 +69,17 @@ impl SciDecimal {
         significand: u64::MAX,
     };
 
+    /// The smallest supported positive number.
+    pub const MIN_POSITIVE: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: false,
+        exponent: i16::MIN,
+        significand: 1,
+    };
+
     /// The highest supported number.
     pub const MAX: SciDecimal = SciDecimal {
         uncertainty: 0,
@@ -789,15 +800,15 @@ impl Float for SciDecimal {
     }
 
     fn min_value() -> Self {
-        todo!()
+        Self::MIN
     }
 
     fn min_positive_value() -> Self {
-        todo!()
+        Self::MIN_POSITIVE
     }
 
     fn max_value() -> Self {
-        todo!()
+        Self::MAX
     }
 
     #[inline]
