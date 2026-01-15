@@ -16,100 +16,6 @@ use rust_decimal::{Decimal, MathematicalOps};
 
 use crate::{RoundingMode, SciFloat, SciNum, error::SciNumError, rounding::cmp_tie};
 
-/// A 16-bit signed exponent represented as a 16-bit unsigned integer by using a bias.
-///
-/// The bias is _b_ = 2<sup>15</sup> = 32768
-///
-/// For the value of the bias, we deviate from the usual IEEE way of doing
-/// things ever so slightly and use 2<sup>15</sup>rather than 2<sup>15</sup> - 1.
-/// This allows the whole range of `i16` to be covered, so we don't have to worry
-/// about invalid input.
-/// It also means that unbiased `0_i16` corresponds to binary
-/// `0b1000000000000000` in the biased representation, `i16::MIN` corresponds to
-/// all 0s, and `i16::MAX` corresponds to all 1s.
-///
-/// Implemented as a wrapper around `u16` primarily to avoid accidentally doing
-/// arithmetic operations on it that only make sense for the unbiased form.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct BiasedExponent(u16);
-
-impl BiasedExponent {
-    /// The bias used to represent the signed exponent as an unsigned integer.
-    const EXPONENT_BIAS: u16 = 32768;
-
-    const ZERO: BiasedExponent = BiasedExponent(BiasedExponent::EXPONENT_BIAS);
-
-    #[allow(unused)]
-    const MIN: BiasedExponent = BiasedExponent(0);
-
-    const MAX: BiasedExponent = BiasedExponent(u16::MAX);
-
-    /// Converts a signed, unbiased exponent to an unsigned, biased representation.
-    fn bias_exponent(exponent: i16) -> Self {
-        if exponent.is_zero() {
-            Self(Self::EXPONENT_BIAS)
-        } else {
-            let unsigned = exponent.unsigned_abs();
-            if exponent.is_positive() {
-                Self(Self::EXPONENT_BIAS + unsigned)
-            } else {
-                Self(Self::EXPONENT_BIAS - unsigned)
-            }
-        }
-    }
-
-    /// Converts an unsigned, biased exponent back to the corresponding signed value.
-    fn unbias(self) -> i16 {
-        if self.0 == Self::EXPONENT_BIAS {
-            0
-        } else if self.0 > Self::EXPONENT_BIAS {
-            // positive
-            let unsigned = self.0 - Self::EXPONENT_BIAS;
-            unsigned as i16
-        } else if self.0 == 0 {
-            // negative but special case
-            i16::MIN
-        } else {
-            // negative
-            let unsigned = Self::EXPONENT_BIAS - self.0;
-            -(unsigned as i16)
-        }
-    }
-
-    /// Returns true if the exponent is greater than 0 in the signed integer form.
-    #[inline]
-    fn is_positive(&self) -> bool {
-        self.0 > Self::EXPONENT_BIAS
-    }
-
-    #[allow(unused)]
-    /// Returns true if the exponent is less than 0 in the signed integer form.
-    #[inline]
-    fn is_negative(&self) -> bool {
-        self.0 < Self::EXPONENT_BIAS
-    }
-
-    /// Returns true if the exponent is equal to 0 in the signed integer form.
-    #[inline]
-    fn is_zero(&self) -> bool {
-        self.0 == Self::EXPONENT_BIAS
-    }
-}
-
-impl From<i16> for BiasedExponent {
-    #[inline]
-    fn from(exponent: i16) -> BiasedExponent {
-        Self::bias_exponent(exponent)
-    }
-}
-
-impl From<BiasedExponent> for i16 {
-    #[inline]
-    fn from(exponent: BiasedExponent) -> i16 {
-        exponent.unbias()
-    }
-}
-
 /// A decimal floating point number with an associated uncertainty.
 ///
 /// Represents a number of the form (_m_ ± _u_) × 10<sup><i>n</i></sup>.
@@ -132,7 +38,7 @@ pub struct SciDecimal {
     nan: bool,
     inf: bool,
     negative: bool,
-    exponent: BiasedExponent,
+    exponent: i16,
     significand: u64,
 }
 
@@ -159,7 +65,7 @@ impl SciDecimal {
         nan: false,
         inf: false,
         negative: true,
-        exponent: BiasedExponent::ZERO,
+        exponent: 0,
         significand: u64::MAX,
     };
 
@@ -170,7 +76,7 @@ impl SciDecimal {
         nan: false,
         inf: false,
         negative: false,
-        exponent: BiasedExponent::MAX,
+        exponent: i16::MAX,
         significand: u64::MAX,
     };
 
@@ -181,7 +87,7 @@ impl SciDecimal {
         nan: true,
         inf: false,
         negative: false,
-        exponent: BiasedExponent::ZERO,
+        exponent: 0,
         significand: 0,
     };
 
@@ -192,7 +98,7 @@ impl SciDecimal {
         nan: false,
         inf: true,
         negative: false,
-        exponent: BiasedExponent::ZERO,
+        exponent: 0,
         significand: 0,
     };
 
@@ -203,7 +109,7 @@ impl SciDecimal {
         nan: false,
         inf: true,
         negative: true,
-        exponent: BiasedExponent::ZERO,
+        exponent: 0,
         significand: 0,
     };
 
@@ -214,7 +120,7 @@ impl SciDecimal {
         nan: false,
         inf: false,
         negative: true,
-        exponent: BiasedExponent::ZERO,
+        exponent: 0,
         significand: 0,
     };
 }
@@ -272,7 +178,7 @@ impl SciDecimal {
             nan: false,
             inf: false,
             negative: number.is_negative(),
-            exponent: exponent.into(),
+            exponent,
             significand: number.unsigned_abs(),
         }
     }
@@ -306,7 +212,7 @@ impl SciDecimal {
             nan: false,
             inf: false,
             negative: number.is_negative(),
-            exponent: exponent.into(),
+            exponent,
             significand: number.unsigned_abs(),
         }
     }
@@ -380,7 +286,7 @@ impl SciDecimal {
             nan: false,
             inf: false,
             negative: integer.is_negative(),
-            exponent: exponent.into(),
+            exponent,
             significand,
         }
     }
@@ -411,7 +317,7 @@ impl SciDecimal {
         let figs_in_frac = frac.checked_ilog10().map_or(0, |x| x + 1);
         let zeros = (figs - 1 - figs_in_frac) as u8; // 1 is for integer digit
         let uncert = self.uncertainty;
-        let exp = self.exponent() + (figs as i16 - 1);
+        let exp = self.exponent + (figs as i16 - 1);
         // For example:
         // 1.23e2 = 123 is stored as (123, 0)       =>  2 =  0 + (3 - 1)
         // 4.5e6 = 4_500_000 is stored as (45, 5)   =>  6 =  5 + (2 - 1)
@@ -440,7 +346,7 @@ impl SciDecimal {
     /// Corresponds to representation of the number as `mmmmm × 10^nn`.
     #[inline]
     pub fn exponent(&self) -> i16 {
-        self.exponent.unbias()
+        self.exponent
     }
 }
 
@@ -458,7 +364,7 @@ impl SciDecimal {
         if !self.is_normal() {
             todo!("Special values are not yet handled correctly by this method!")
         }
-        self.exponent()
+        self.exponent
     }
 
     /// Returns the scale of the most significant place.
@@ -477,7 +383,7 @@ impl SciDecimal {
         if !self.is_normal() {
             todo!("Special values are not yet handled correctly by this method!")
         }
-        self.exponent() + (i16::from(self.sf()) - 1)
+        self.exponent + (i16::from(self.sf()) - 1)
     }
 
     /// Returns the scale of the least significant place of the uncertainty.
@@ -488,7 +394,7 @@ impl SciDecimal {
         if self.is_exact() {
             None
         } else {
-            Some(self.exponent() + self.uncertainty_scale as i16)
+            Some(self.exponent + self.uncertainty_scale as i16)
         }
     }
 
@@ -542,7 +448,7 @@ impl SciDecimal {
         while self.sf() > sf {
             self.significand /= 10;
             // Exponent is now too small
-            self.exponent.0 += 1;
+            self.exponent += 1;
             // Uncertainty is now too large
             if !self.is_exact() {
                 self.uncertainty_scale -= 1;
@@ -569,7 +475,7 @@ impl SciDecimal {
         for _ in 0..sf {
             self.significand *= 10;
             // Exponent is now too large
-            self.exponent.0 -= 1;
+            self.exponent -= 1;
             // Uncertainty is now too small
             if !self.is_exact() {
                 self.uncertainty_scale += 1;
@@ -591,7 +497,7 @@ impl SciDecimal {
         for _ in 0..sf {
             self.significand = self.significand.checked_mul(10)?;
             // Exponent is now too large
-            self.exponent.0 = self.exponent.0.checked_sub(1)?;
+            self.exponent = self.exponent.checked_sub(1)?;
             // Uncertainty is now too small
             if !self.is_exact() {
                 self.uncertainty_scale += 1;
@@ -610,7 +516,7 @@ impl SciNum for SciDecimal {
         nan: false,
         inf: false,
         negative: false,
-        exponent: BiasedExponent::ZERO,
+        exponent: 0,
         significand: 0,
     };
 
@@ -620,7 +526,7 @@ impl SciNum for SciDecimal {
         nan: false,
         inf: false,
         negative: false,
-        exponent: BiasedExponent::ZERO,
+        exponent: 0,
         significand: 1,
     };
 
@@ -653,7 +559,7 @@ impl SciNum for SciDecimal {
                 nan: false,
                 inf: false,
                 negative: false,
-                exponent: (self.exponent.unbias() + self.uncertainty_scale as i16).into(),
+                exponent: self.exponent + self.uncertainty_scale as i16,
                 significand: self.uncertainty.into(),
             }
         }
@@ -692,7 +598,7 @@ impl SciNum for SciDecimal {
         } else {
             uncertainty
         };
-        self.uncertainty_scale = (narrowed_uncertainty.exponent.unbias() - self.exponent.unbias())
+        self.uncertainty_scale = (narrowed_uncertainty.exponent - self.exponent)
             .try_into()
             .expect(
                 "Difference in precision of number and uncertainty should never be this large!",
@@ -717,11 +623,11 @@ impl SciNum for SciDecimal {
         if !self.is_normal() {
             todo!("Special values are not yet handled correctly by this method!")
         }
-        if self.exponent() == prec {
+        if self.exponent == prec {
             return self;
         }
         let mut new = self;
-        let current_prec = new.exponent();
+        let current_prec = new.exponent;
         if prec < current_prec {
             // Simply add zeros to fulfil request
             new = new.increase_precision(
@@ -773,7 +679,7 @@ impl SciNum for SciDecimal {
                 }
             }
             new.significand = new_sig;
-            new.exponent = prec.into();
+            new.exponent = prec;
             if !new.is_exact() {
                 new.uncertainty_scale -= shifted as i8;
             }
@@ -1020,7 +926,7 @@ impl SciDecimal {
             self.powi(n.abs()).inv()
         } else {
             let number = self.significand_signed().pow(n.try_into().unwrap());
-            let exponent = self.exponent() * i16::try_from(n).unwrap();
+            let exponent = self.exponent * i16::try_from(n).unwrap();
             Self::new(number, exponent)
         };
         if self.is_exact() {
@@ -1205,7 +1111,7 @@ impl PartialEq for SciDecimal {
             let factor = self.significand / other.significand;
             if factor.is_multiple_of(10) {
                 let order_diff = factor.ilog10();
-                self.exponent.0 + order_diff as u16 == other.exponent.0
+                self.exponent + order_diff as i16 == other.exponent
             } else {
                 false
             }
@@ -1213,7 +1119,7 @@ impl PartialEq for SciDecimal {
             let factor = other.significand / self.significand;
             if factor.is_multiple_of(10) {
                 let order_diff = factor.ilog10();
-                other.exponent.0 + order_diff as u16 == self.exponent.0
+                other.exponent + order_diff as i16 == self.exponent
             } else {
                 false
             }
@@ -1270,14 +1176,14 @@ impl PartialOrd for SciDecimal {
         let rhs_magnitude = other.precision_most_significant_fig();
         let ordering = if lhs_magnitude != rhs_magnitude {
             lhs_magnitude.cmp(&rhs_magnitude)
-        } else if self.exponent.0 == other.exponent.0 {
+        } else if self.exponent == other.exponent {
             // Easy to compare them if the exponents are the same
             self.significand.cmp(&other.significand)
         } else {
             // Otherwise have to set to same precision
             let mut lhs_sig = self.significand as u128;
             let mut rhs_sig = other.significand as u128;
-            let exp_diff = self.exponent() - other.exponent();
+            let exp_diff = self.exponent - other.exponent;
             if exp_diff.is_positive() {
                 // e.g. self = 3e6, other = 3072e3
                 // Have to make self into 3000e3 to be able to compare
@@ -1334,21 +1240,21 @@ impl Add for SciDecimal {
             // In the simplest case, the exponents are the same
             Ordering::Equal => {
                 let number = self.significand_signed() + rhs.significand_signed();
-                Self::new(number, self.exponent())
+                Self::new(number, self.exponent)
             }
             // Otherwise have to try and set the exponent to the same for both terms
             // Use whichever exponent is smallest
             Ordering::Less => {
-                let exp_diff = rhs.exponent.0 - self.exponent.0;
+                let exp_diff = rhs.exponent - self.exponent;
                 let scaled = rhs.increase_precision(exp_diff.try_into().unwrap());
                 let number = self.significand_signed() + scaled.significand_signed();
-                Self::new(number, self.exponent())
+                Self::new(number, self.exponent)
             }
             Ordering::Greater => {
-                let exp_diff = self.exponent.0 - rhs.exponent.0;
+                let exp_diff = self.exponent - rhs.exponent;
                 let scaled = self.increase_precision(exp_diff.try_into().unwrap());
                 let number = scaled.significand_signed() + rhs.significand_signed();
-                Self::new(number, scaled.exponent())
+                Self::new(number, scaled.exponent)
             }
         };
         if self.is_exact() && rhs.is_exact() {
@@ -1425,12 +1331,12 @@ impl Mul for SciDecimal {
             (false, false) => {}
         }
         let (significand, exponent) = match self.significand.checked_mul(rhs.significand) {
-            Some(s) => (s, self.exponent() + rhs.exponent()),
+            Some(s) => (s, self.exponent + rhs.exponent),
             None => {
                 // Significand multiplication results in overflow, so convert to u128,
                 // do mul (which won't ever overflow), then round
                 let mut too_wide = (self.significand as u128) * (rhs.significand as u128);
-                let mut e = self.exponent() + rhs.exponent();
+                let mut e = self.exponent + rhs.exponent;
                 let s: u64 = loop {
                     match u64::try_from(too_wide) {
                         Err(_) => {
@@ -1454,7 +1360,7 @@ impl Mul for SciDecimal {
             nan: false,
             inf: false,
             negative,
-            exponent: exponent.into(),
+            exponent,
             significand,
         };
         if self.is_exact() && rhs.is_exact() {
@@ -1545,14 +1451,14 @@ impl Div for SciDecimal {
         } else {
             lhs.significand / rhs.significand
         };
-        let exponent = lhs.exponent() - rhs.exponent();
+        let exponent = lhs.exponent - rhs.exponent;
         let exact = Self {
             uncertainty: 0,
             uncertainty_scale: 0,
             nan: false,
             inf: false,
             negative,
-            exponent: exponent.into(),
+            exponent,
             significand,
         };
         if self.is_exact() && rhs.is_exact() {
@@ -1814,7 +1720,7 @@ impl FromStr for SciDecimal {
             nan: false,
             inf: false,
             negative,
-            exponent: exponent.into(),
+            exponent,
             significand,
         })
     }
@@ -1892,7 +1798,7 @@ impl From<SciDecimal> for BigDecimal {
         }
         BigDecimal::from_bigint(
             BigInt::from_i64(n.significand_signed()).unwrap(),
-            -(n.exponent()) as i64,
+            -(n.exponent) as i64,
         )
     }
 }
@@ -2106,40 +2012,6 @@ mod tests {
 
         let n3 = SciDecimal::new_with_uncertainty(1000, 15, 0);
         assert_eq!(n3.relative_uncertainty(), SciDecimal::new(15, -3));
-    }
-
-    #[test]
-    fn bias_unbias_exponent() {
-        // Bias
-        assert_eq!(BiasedExponent::bias_exponent(0), BiasedExponent(32768));
-        assert_eq!(BiasedExponent::bias_exponent(0), BiasedExponent::ZERO);
-        assert_eq!(BiasedExponent::bias_exponent(i16::MIN), BiasedExponent(0));
-        assert_eq!(BiasedExponent::bias_exponent(i16::MIN), BiasedExponent::MIN);
-        assert_eq!(
-            BiasedExponent::bias_exponent(i16::MAX),
-            BiasedExponent(u16::MAX)
-        );
-        assert_eq!(BiasedExponent::bias_exponent(i16::MAX), BiasedExponent::MAX);
-        assert_eq!(BiasedExponent::bias_exponent(1), BiasedExponent(32769));
-        assert_eq!(BiasedExponent::bias_exponent(-1), BiasedExponent(32767));
-        assert_eq!(BiasedExponent::bias_exponent(101), BiasedExponent(32869));
-        assert_eq!(BiasedExponent::bias_exponent(-101), BiasedExponent(32667));
-        // Unbias
-        assert_eq!(BiasedExponent(32768).unbias(), 0);
-        assert_eq!(BiasedExponent::ZERO.unbias(), 0);
-        assert_eq!(BiasedExponent(0).unbias(), i16::MIN);
-        assert_eq!(BiasedExponent::MIN.unbias(), i16::MIN);
-        assert_eq!(BiasedExponent(u16::MAX).unbias(), i16::MAX);
-        assert_eq!(BiasedExponent::MAX.unbias(), i16::MAX);
-        assert_eq!(BiasedExponent(32769).unbias(), 1);
-        assert_eq!(BiasedExponent(32767).unbias(), -1);
-        assert_eq!(BiasedExponent(32869).unbias(), 101);
-        assert_eq!(BiasedExponent(32667).unbias(), -101);
-        // Round trip with a few random numbers including close to the extremes
-        assert_eq!(BiasedExponent::bias_exponent(-46).unbias(), -46);
-        assert_eq!(BiasedExponent::bias_exponent(13).unbias(), 13);
-        assert_eq!(BiasedExponent::bias_exponent(32765).unbias(), 32765);
-        assert_eq!(BiasedExponent::bias_exponent(-32765).unbias(), -32765);
     }
 
     #[test]
