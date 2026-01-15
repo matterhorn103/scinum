@@ -842,7 +842,7 @@ impl Float for SciDecimal {
     }
 
     fn round(self) -> Self {
-        self.round_precision(0, RoundingMode::HalfEven)
+        self.round_precision(0, RoundingMode::HalfUp)
     }
 
     fn trunc(self) -> Self {
