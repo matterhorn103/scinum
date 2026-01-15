@@ -40,7 +40,7 @@ impl ToPrimitive for SciDecimal {
             Ordering::Less => {
                 // Significand is guaranteed to not be larger than 10^16 - 1 and
                 // therefore so is the resulting number
-                Some(self.round_precision(0, RoundingMode::HalfEven).significand_signed())
+                Some(self.round_precision(0, RoundingMode::HalfUp).significand_signed())
             },
             Ordering::Equal => Some(self.significand_signed()),
             Ordering::Greater => {
