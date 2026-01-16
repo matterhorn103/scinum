@@ -235,9 +235,7 @@ impl Num for SciFloat {
     }
 }
 
-//impl Float for SciFloat {
-#[allow(unused)]
-impl SciFloat {
+impl Float for SciFloat {
     #[inline]
     fn nan() -> Self {
         Self::NAN
