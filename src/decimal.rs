@@ -818,7 +818,9 @@ impl Float for SciDecimal {
 
     #[inline]
     fn is_infinite(self) -> bool {
-        self.inf
+        // The NaN flag overrides the infinity flag i.e. if a `SciDecimal` has
+        // both `true` then it is considered a NaN and therefore *not infinite*
+        self.inf & !self.nan
     }
 
     #[inline]
@@ -1957,28 +1959,76 @@ mod tests {
 
     #[test]
     fn nan() {
-        let n = SciDecimal::nan();
-        assert!(n.is_nan());
-        assert_ne!(n, SciDecimal::NAN); // Characteristic of NaN
-        assert!(!n.is_normal());
-        assert!(!n.is_zero());
-        assert!(n.number().is_nan());
-        assert!(n.uncertainty().is_nan());
+        // Important to check this not just with the `NAN` const but also to
+        // confirm that the different flag bits override each other in the
+        // expected way.
+        // Any `SciDecimal` with `self.nan == true` should be considered a NaN,
+        // even if `self.inf` is `true`, so there are 2^127 different NaNs.
+        // It is important that none of them are ever treated as a normal number,
+        // or as an infinity, or as negative, etc.
+        for nan in [
+            SciDecimal::NAN,
+            SciDecimal::nan(),
+            SciDecimal {
+                uncertainty: 3,
+                uncertainty_scale: 0,
+                nan: true,
+                inf: true,
+                negative: false,
+                exponent: 1,
+                significand: 0,
+            },
+            SciDecimal {
+                uncertainty: 3,
+                uncertainty_scale: -1,
+                nan: true,
+                inf: true,
+                negative: true,
+                exponent: -4,
+                significand: 25,
+            },
+            SciDecimal {
+                uncertainty: 373,
+                uncertainty_scale: 2,
+                nan: true,
+                inf: true,
+                negative: false,
+                exponent: 38,
+                significand: 9234872,
+            }] {
+            assert!(nan.is_nan());
+            assert_ne!(nan, SciDecimal::NAN); // Characteristic of NaN
+            assert!(nan.is_nan());
+            assert!(!nan.is_infinite());
+            assert!(!nan.is_finite()); // NaN is neither finite nor infinite
+            assert!(!nan.is_normal());
+            assert!(!nan.is_zero());
+            assert!(nan.number().is_nan());
+            assert!(nan.uncertainty().is_nan());
+        }
     }
 
     #[test]
     fn infinities() {
-        let i = SciDecimal::infinity();
-        let n = SciDecimal::neg_infinity();
-        assert!(i.is_infinite());
-        assert!(n.is_infinite());
-        assert!(!i.is_finite());
-        assert!(!n.is_finite());
-        assert!(!i.is_zero());
-        assert!(!n.is_zero());
-        assert!(!i.is_normal());
-        assert!(!n.is_normal());
-        assert_ne!(i, n);
+        // Similarly, any `SciDecimal` that has `self.inf == true` is an infinity
+        // (*unless it also has `self.nan == true`*, see above), and thus there
+        // are also 2^126 different infinities…
+        for (inf, ninf) in [
+            (SciDecimal::INFINITY, SciDecimal::NEG_INFINITY),
+            (SciDecimal::infinity(), SciDecimal::neg_infinity()),
+        ] {
+            assert!(!inf.is_nan());
+            assert!(!ninf.is_nan());
+            assert!(inf.is_infinite());
+            assert!(ninf.is_infinite());
+            assert!(!inf.is_finite());
+            assert!(!ninf.is_finite());
+            assert!(!inf.is_normal());
+            assert!(!ninf.is_normal());
+            assert!(!inf.is_zero());
+            assert!(!ninf.is_zero());
+            assert_ne!(inf, ninf);
+        }
     }
 
     #[test]
