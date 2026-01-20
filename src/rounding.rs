@@ -1,6 +1,3 @@
-// SPDX-FileCopyrightText: 2026 Matthew Milner <matterhorn103@proton.me>
-// SPDX-License-Identifier: MIT OR Apache-2.0
-
 use std::cmp::Ordering;
 
 use num_traits::Zero;
