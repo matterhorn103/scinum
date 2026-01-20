@@ -6,6 +6,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 bigdecimal = "0.4.10"
+num-integer = "0.1.46"
 num-traits = "0.2.19"
 regex = "1.12.2"
 rust_decimal_macros = "1.39.0"
