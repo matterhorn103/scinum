@@ -313,6 +313,9 @@ impl SciDecimal {
         if self.is_zero() {
             return (0, 0, 0, 0, 0);
         };
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
         let figs = self.sf() as u32;
         let int_unsigned = self.significand / 10_u64.pow(figs - 1); // First digit
         let int = if self.negative {
@@ -335,10 +338,15 @@ impl SciDecimal {
         (int, zeros, frac, uncert, exp)
     }
 
-    /// Returns the significand _m_ of the number when represented with _m_ as
-    /// an integer.
+    /// Returns the signed significand _m_ of the number when represented with
+    /// _m_ as an integer.
     ///
-    /// Corresponds to representation of the number as `mmmmm × 10^nn`.
+    /// Corresponds to `(-1)^s × mmmmm` in the actual in-memory representation
+    /// of the number as `(-1)^s × mmmmm × 10^nn`
+    ///
+    /// Note that the current stored value of the significand is returned even
+    /// when the number is not normal (and the value of the significand therefore
+    /// moot).
     #[inline]
     pub fn significand_signed(&self) -> i64 {
         if self.negative {
@@ -348,10 +356,40 @@ impl SciDecimal {
         }
     }
 
+    /// Returns the unsigned significand _m_ of the number when represented with
+    /// _m_ as an integer.
+    ///
+    /// Corresponds to `mmmmm` in the actual in-memory representation of the
+    /// number as `(-1)^s × mmmmm × 10^nn`
+    ///
+    /// Note that the current stored value of the significand is returned even
+    /// when the number is not normal (and the value of the significand therefore
+    /// moot).
+    #[inline]
+    pub fn significand(&self) -> u64 {
+        self.significand
+    }
+
+    /// Returns the sign bit; `true` means the `SciDecimal` is negative.
+    ///
+    /// Corresponds to `s` in the actual in-memory representation of the number
+    /// as `(-1)^s × mmmmm × 10^nn`
+    ///
+    /// Note that the current stored value of the sign bit is returned even when
+    /// the number is not normal (and the value of the sign therefore moot).
+    #[inline]
+    pub fn sign(&self) -> bool {
+        self.negative
+    }
+
     /// Returns the exponent _n_ of the number when represented with _m_ as an
     /// integer.
     ///
-    /// Corresponds to representation of the number as `mmmmm × 10^nn`.
+    /// Corresponds to `nn` in the actual in-memory representation of the number
+    /// as `(-1)^s × mmmmm × 10^nn`
+    ///
+    /// Note that the current stored value of the exponent is returned even when
+    /// the number is not normal (and the value of the exponent therefore moot).
     #[inline]
     pub fn exponent(&self) -> i16 {
         self.exponent
