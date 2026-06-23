@@ -797,23 +797,15 @@ impl From<f32> for SciFloat {
 }
 
 /// TODO: tests
-impl From<SciDecimal> for SciFloat {
-    /// Converts a `SciDecimal` to a `SciFloat`.
-    /// 
-    /// `n` is first rounded to 15 significant figures using `SciDecimal.round_sf()`,
-    /// which in some cases may give the result a slightly lower precision than
-    /// would theoretically be representable.
-    /// The rounding uses the `RoundingMode::HalfEven` strategy.
-    /// 
-    /// If the absolute value of `n` is larger than `f64::MAX`, the appropriate
-    /// infinity will be returned.
-    /// If the absolute value of `n` is smaller than `f64::MIN_POSITIVE`, positive
-    /// zero will be returned.
-    fn from(n: SciDecimal) -> Self {
-        Self {
-            number: n.number().into(),
-            uncertainty: n.uncertainty().into(),
-        }
+impl TryFrom<SciDecimal> for SciFloat {
+    type Error = ParseFloatError;
+
+    /// Attempts to convert a `SciDecimal` to a `SciFloat`.
+    fn try_from(n: SciDecimal) -> Result<Self, ParseFloatError> {
+        Ok(Self {
+            number: n.number().try_into()?,
+            uncertainty: n.uncertainty().try_into()?,
+        })
     }
 }
 

@@ -1,7 +1,7 @@
 use std::{
     cmp::Ordering,
     fmt::{self, Debug},
-    num::FpCategory,
+    num::{FpCategory, ParseFloatError},
     ops::{Add, Div, Mul, Neg, Rem, Sub},
     str::FromStr,
 };
@@ -766,12 +766,13 @@ impl SciNum for SciDecimal {
 }
 
 impl Num for SciDecimal {
-    type FromStrRadixErr = rust_decimal::Error;
+    type FromStrRadixErr = SciNumError;
 
-    fn from_str_radix(str: &str, radix: u32) -> Result<Self, rust_decimal::Error> {
-        // For now, just make use of the Decimal implementation
-        let dec = Decimal::from_str_radix(str, radix)?;
-        Ok(Self::from(dec))
+    fn from_str_radix(str: &str, radix: u32) -> Result<Self, SciNumError> {
+        // For now, just make use of the BigDecimal implementation
+        let dec = BigDecimal::from_str_radix(str, radix)
+            .or(Err(SciNumError::Parse(format!("Couldn't parse {}", str))))?;
+        Self::try_from(dec)
     }
 }
 
@@ -964,10 +965,12 @@ impl Float for SciDecimal {
         }
         let number = Decimal::try_from(self.number()).unwrap().exp();
         if self.is_exact() {
-            Self::from(number)
+            Self::try_from(number).unwrap()
         } else {
             let uncertainty = number.abs() * Decimal::try_from(self.uncertainty()).unwrap();
-            Self::from(number).with_uncertainty(uncertainty.into())
+            Self::try_from(number)
+                .unwrap()
+                .with_uncertainty(uncertainty.try_into().unwrap())
         }
     }
 
@@ -981,12 +984,14 @@ impl Float for SciDecimal {
         }
         let number = Decimal::try_from(self.number()).unwrap().ln();
         if self.is_exact() {
-            Self::from(number)
+            Self::try_from(number).unwrap()
         } else {
             let uncertainty = Decimal::try_from(self.relative_uncertainty())
                 .unwrap()
                 .abs();
-            Self::from(number).with_uncertainty(uncertainty.into())
+            Self::try_from(number)
+                .unwrap()
+                .with_uncertainty(uncertainty.try_into().unwrap())
         }
     }
 
@@ -1004,12 +1009,14 @@ impl Float for SciDecimal {
         }
         let number = Decimal::try_from(self.number()).unwrap().log10();
         if self.is_exact() {
-            Self::from(number)
+            Self::try_from(number).unwrap()
         } else {
             let uncertainty = (Decimal::try_from(self.uncertainty()).unwrap()
                 / (Decimal::TEN.ln() * Decimal::try_from(self.number()).unwrap()))
             .abs();
-            Self::from(number).with_uncertainty(uncertainty.into())
+            Self::try_from(number)
+                .unwrap()
+                .with_uncertainty(uncertainty.try_into().unwrap())
         }
     }
 
@@ -1519,7 +1526,7 @@ impl Rem for SciDecimal {
             Decimal::try_from(self.number()).unwrap() % Decimal::try_from(rhs.number()).unwrap();
         // Don't calculate uncertainty as the remainder function is discontinuous,
         // making it tricky
-        number.into()
+        number.try_into().unwrap()
     }
 }
 
@@ -1741,23 +1748,22 @@ macro_rules! sci {
     };
 }
 
-impl From<Decimal> for SciDecimal {
-    /// Converts a `rust_decimal::Decimal` to a `SciDecimal`.
+impl TryFrom<Decimal> for SciDecimal {
+    type Error = SciNumError;
+
+    /// Attempts to convert a `rust_decimal::Decimal` to a `SciDecimal`, dropping
+    /// any uncertainty.
     ///
-    /// A silent loss of precision will occur if the `Decimal` has a significand
-    /// wider than 64 bits.
-    /// If this is the case, `n` is first rounded to 16 significant figures using
-    /// `Decimal.round_sf()`; the rounding thus follows the
-    /// `rust_decimal::RoundingStrategy::MidpointNearestEven` strategy.
-    fn from(n: Decimal) -> Self {
+    /// Fails if the `Decimal` has a significand with more than 16 significant figures.
+    fn try_from(n: Decimal) -> Result<SciDecimal, SciNumError> {
         let n = if n.mantissa() < SciDecimal::MAX_SIGNIFICAND_SIGNED.into() {
             n
         } else {
-            n.round_sf(16).unwrap()
+            return Err(SciNumError::Cast("Precision too high".to_string()));
         };
         // The significand should now fit into a `u64`
         // `n.scale()` is max 28 anyway, should be max 18 at this point
-        Self::new(n.mantissa() as i64, -(n.scale() as i16))
+        Ok(Self::new(n.mantissa() as i64, -(n.scale() as i16)))
     }
 }
 
@@ -1767,11 +1773,11 @@ impl TryFrom<SciDecimal> for Decimal {
     /// Attempts to convert a `SciDecimal` into a `rust_decimal::Decimal`, dropping
     /// any uncertainty.
     ///
-    /// Currently goes via the string representation using `Decimal::from_str_exact()`.
+    /// Fails if the number is not representable by `Decimal`, either because
+    /// the number is outside of the range 10<sup>−28</sup> to 10<sup>28</sup>,
+    /// or because it is not normal.
     ///
-    /// Any number not representable by `Decimal` (generally because the number
-    /// is outside of the range 10<sup>−28</sup> to 10<sup>28</sup>) will lead to
-    /// this function failing.
+    /// Currently goes via the string representation using `Decimal::from_str_exact()`.
     fn try_from(n: SciDecimal) -> Result<Decimal, rust_decimal::Error> {
         let s = n.number().to_string();
         dbg!(&s);
@@ -1785,29 +1791,40 @@ impl TryFrom<SciDecimal> for Decimal {
 }
 
 // TODO: tests
-impl From<BigDecimal> for SciDecimal {
-    /// Converts a `bigdecimal::BigDecimal` to a `SciDecimal`.
+impl TryFrom<BigDecimal> for SciDecimal {
+    type Error = SciNumError;
+
+    /// Attempts to convert a `bigdecimal::BigDecimal` to a `SciDecimal`.
+    ///
+    /// Fails if the `BigDecimal` has a significand with more than 16 significant
+    /// figures or an exponent that cannot be represented by an `i8`.
     ///
     /// The conversion currently goes via the string representation.
-    ///
-    /// A silent loss of precision will occur if the `BigDecimal` has a significand
-    /// with more than 16 significant figures.
-    fn from(n: BigDecimal) -> Self {
-        n.to_scientific_notation().parse().unwrap()
+    fn try_from(n: BigDecimal) -> Result<Self, SciNumError> {
+        n.to_scientific_notation().parse()
     }
 }
 
 // TODO: tests
-impl From<SciDecimal> for BigDecimal {
-    /// Converts a `SciDecimal` into a `bigdecimal::BigDecimal`, dropping any uncertainty.
-    fn from(n: SciDecimal) -> Self {
+impl TryFrom<SciDecimal> for BigDecimal {
+    type Error = bigdecimal::ParseBigDecimalError;
+
+    /// Attempts to convert a `SciDecimal` to a `bigdecimal::BigDecimal`, dropping
+    /// any uncertainty.
+    ///
+    /// Fails if the number is not normal.
+    fn try_from(n: SciDecimal) -> Result<BigDecimal, bigdecimal::ParseBigDecimalError> {
         if !n.is_normal() {
-            todo!("Special values are not yet handled correctly by this method!")
+            Err(bigdecimal::ParseBigDecimalError::Other(
+                "BigDecimal can only represent normal values, not −0, ∞, or NaN".to_string(),
+            ))
+        } else {
+            Ok(BigDecimal::from_bigint(
+                BigInt::from_i64(n.significand_signed())
+                    .expect("The significand of a SciDecimal easily fits into a BigDecimal"),
+                -(n.exponent) as i64,
+            ))
         }
-        BigDecimal::from_bigint(
-            BigInt::from_i64(n.significand_signed()).unwrap(),
-            -(n.exponent) as i64,
-        )
     }
 }
 
@@ -1821,40 +1838,85 @@ impl From<SciFloat> for SciDecimal {
 // TODO: tests
 impl From<f64> for SciDecimal {
     /// Converts an `f64` to a `SciDecimal`.
-    /// 
+    ///
     /// The conversion currently goes via the string representation.
     fn from(n: f64) -> Self {
-        n.to_string().parse().expect("All possible f64 values are representable as a SciDecimal")
+        n.to_string()
+            .parse()
+            .expect("All possible f64 values are representable as a SciDecimal")
     }
 }
 
 // TODO: tests
-impl From<SciDecimal> for f64 {
-    /// Converts a `SciDecimal` to an `f64`, dropping any uncertainty.
-    /// 
+impl TryFrom<SciDecimal> for f64 {
+    type Error = ParseFloatError;
+
+    /// Attempts to convert a `SciDecimal` to an `f64`, dropping any uncertainty.
+    ///
     /// `n` is first rounded to 15 significant figures using `SciDecimal.round_sf()`,
     /// which in some cases may give the result a slightly lower precision than
     /// would theoretically be representable.
     /// The rounding uses the `RoundingMode::HalfEven` strategy.
-    /// 
+    ///
     /// If the absolute value of `n` is larger than `f64::MAX`, the appropriate
     /// infinity will be returned.
     /// If the absolute value of `n` is smaller than `f64::MIN_POSITIVE`, positive
     /// zero will be returned.
-    /// 
+    ///
     /// The conversion currently goes via the string representation.
-    fn from(n: SciDecimal) -> f64 {
+    fn try_from(n: SciDecimal) -> Result<f64, ParseFloatError> {
         if n.nan {
-            return f64::NAN
+            Ok(f64::NAN)
         } else if n.inf || n.abs() > SciDecimal::from(f64::MAX) {
-            if n.negative { return f64::NEG_INFINITY } else { return f64::INFINITY }
+            if n.negative {
+                Ok(f64::NEG_INFINITY)
+            } else {
+                Ok(f64::INFINITY)
+            }
+        } else {
+            f64::from_str(&n.to_string())
+        }
+    }
+}
+
+impl SciDecimal {
+    /// Converts a `SciDecimal` to an `f64`, dropping any uncertainty,
+    /// rounding and saturating as appropriate.
+    ///
+    /// `n` is first rounded to 15 significant figures using `SciDecimal.round_sf()`,
+    /// which in some cases may give the result a slightly lower precision than
+    /// would theoretically be representable.
+    /// The rounding uses the `RoundingMode::HalfEven` strategy.
+    ///
+    /// If the absolute value of `n` is larger than `f64::MAX`, the appropriate
+    /// infinity will be returned.
+    /// If the absolute value of `n` is smaller than `f64::MIN_POSITIVE`, positive
+    /// zero will be returned.
+    ///
+    /// The conversion currently goes via the string representation.
+    fn to_f64(n: SciDecimal) -> f64 {
+        if n.nan {
+            return f64::NAN;
+        } else if n.inf || n.abs() > SciDecimal::from(f64::MAX) {
+            if n.negative {
+                return f64::NEG_INFINITY;
+            } else {
+                return f64::INFINITY;
+            }
         } else if n.abs() < SciDecimal::from(f64::MIN_POSITIVE) {
-            return 0.0
+            return 0.0;
         }
         // Otherwise, must be able to fit, if we just drop excess precision
         // Don't waste time adding trailing zeros if we don't have to
-        let narrowed = if n.sf() > 15 { n.round_sf(15, RoundingMode::HalfEven) } else { n };
-        narrowed.to_string().parse().expect("All other possible values should fit into an f64")
+        let narrowed = if n.sf() > 15 {
+            n.round_sf(15, RoundingMode::HalfEven)
+        } else {
+            n
+        };
+        narrowed
+            .to_string()
+            .parse()
+            .expect("All other possible values should fit into an f64")
     }
 }
 
@@ -1911,11 +1973,11 @@ mod tests {
 
         let n3 = SciDecimal::from_scientific_parts(2, 0, 36, 0, 5);
         assert_eq!(n3.to_string(), "2.36e5");
-        assert_eq!(n3, SciDecimal::from(dec!(2.36e5)));
+        assert_eq!(n3, sci!(2.36e5));
 
         let n4 = SciDecimal::from_scientific_parts(23, 0, 61, 0, -7);
         assert_eq!(n4.to_string(), "2.361e-6");
-        assert_eq!(n4, SciDecimal::from(dec!(2.361e-6)));
+        assert_eq!(n4, sci!(2.361e-6));
     }
 
     #[test]
@@ -1992,7 +2054,8 @@ mod tests {
                 negative: false,
                 exponent: 38,
                 significand: 9234872,
-            }] {
+            },
+        ] {
             assert!(nan.is_nan());
             assert_ne!(nan, SciDecimal::NAN); // Characteristic of NaN
             assert!(nan.is_nan());
@@ -2030,11 +2093,11 @@ mod tests {
 
     #[test]
     fn from_decimal() {
-        let n = SciDecimal::from(dec!(20));
+        let n = sci!(20);
         assert_eq!(n.number(), SciDecimal::new(20, 0));
-        assert_eq!(n.number(), SciDecimal::from(dec!(20)));
+        assert_eq!(n.number(), sci!(20));
         assert_eq!(n.uncertainty(), SciDecimal::new(0, 0));
-        assert_eq!(n.uncertainty(), SciDecimal::from(dec!(0)));
+        assert_eq!(n.uncertainty(), SciDecimal::ZERO);
     }
 
     #[test]
@@ -2078,7 +2141,7 @@ mod tests {
         let n2 = SciDecimal::from_scientific_parts(123, 1, 45, 0, 0);
         assert_eq!(n2.sf(), 6);
 
-        let n3 = SciDecimal::from(dec!(0.00123));
+        let n3 = sci!(0.00123);
         assert_eq!(n3.sf(), 3);
 
         let n4 = SciDecimal::new(1234, 0);
@@ -2090,7 +2153,7 @@ mod tests {
         let n = SciDecimal::from_scientific_parts(123, 0, 4500, 0, 0);
         assert_eq!(n.sf(), 7);
 
-        let n2 = SciDecimal::from(dec!(0.001230));
+        let n2 = sci!(0.001230);
         assert_eq!(n2.sf(), 4);
 
         let n3 = SciDecimal::new(1230, 0);
@@ -2113,8 +2176,8 @@ mod tests {
     #[test]
     fn precision() {
         assert_eq!(sci!(0.02).precision(), -2);
-        assert_eq!(SciDecimal::from(dec!(0.020)).precision(), -3);
-        assert_eq!(SciDecimal::from(Decimal::TWO).precision(), 0);
+        assert_eq!(sci!(0.020).precision(), -3);
+        assert_eq!(sci!(2).precision(), 0);
         assert_eq!(SciDecimal::new(2, 3).precision(), 3);
         assert_eq!(SciDecimal::from_str("2e3").unwrap().precision(), 3);
     }
@@ -2654,7 +2717,7 @@ mod tests {
             Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
             dec!(116.619037896906).round_dp(5)
         );
-        let ft = SciDecimal::from(dec!(0.3048));
+        let ft = sci!(0.3048);
         let square_ft = ft * ft;
         assert_eq!(square_ft, sci!(0.09290304));
     }
@@ -3007,7 +3070,7 @@ mod tests {
         assert_eq!(SciDecimal::new(1, -3).to_string(), "0.001");
         assert_eq!(SciDecimal::new(1, -4).to_string(), "0.0001");
         assert_eq!(SciDecimal::new(1, -5).to_string(), "0.00001");
-        assert_eq!(SciDecimal::from(dec!(0.00001)).to_string(), "0.00001");
+        assert_eq!(sci!(0.00001).to_string(), "0.00001");
         assert_eq!(SciDecimal::new(325, -4).to_string(), "0.0325");
         assert_eq!(SciDecimal::new(-325, -4).to_string(), "-0.0325");
         assert_eq!(SciDecimal::new(85130, -3).to_string(), "85.130");
@@ -3017,7 +3080,7 @@ mod tests {
         assert_eq!(SciDecimal::new(325, -6).to_string(), "3.25e-4"); // Not 0.000325
         assert_eq!(SciDecimal::new(-325, -6).to_string(), "-3.25e-4");
         assert_eq!(SciDecimal::new(8174036, 0).to_string(), "8.174036e6");
-        assert_eq!(SciDecimal::from(dec!(0.000000432)).to_string(), "4.32e-7");
+        assert_eq!(sci!(0.000000432).to_string(), "4.32e-7");
         // Importantly, explicit zeros should be treated as significant
         assert_eq!(SciDecimal::new(1295800, 0).to_string(), "1.295800e6");
         // Scientific notation should also be used if there are insignificant zeros
