@@ -79,14 +79,14 @@ impl One for SciFloat {
 
 // Instantiation
 impl SciFloat {
-    pub fn new(number: f64) -> Self {
+    pub const fn new(number: f64) -> Self {
         Self {
             number,
             uncertainty: 0.0,
         }
     }
 
-    pub fn new_with_uncertainty(number: f64, uncertainty: f64) -> Self {
+    pub const fn new_with_uncertainty(number: f64, uncertainty: f64) -> Self {
         Self {
             number,
             uncertainty,

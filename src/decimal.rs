@@ -176,9 +176,9 @@ impl SciDecimal {
     /// let n = SciDecimal::new(251, -3);
     /// assert_eq!(n.to_string(), "0.251");
     /// ```
-    pub fn new(number: i64, exponent: i16) -> Self {
-        if !(Self::MIN_SIGNIFICAND_SIGNED..=Self::MAX_SIGNIFICAND_SIGNED).contains(&number) {
-            panic!("{number} has too many significant figures for a significand!")
+    pub const fn new(number: i64, exponent: i16) -> Self {
+        if number < Self::MIN_SIGNIFICAND_SIGNED || number > Self::MAX_SIGNIFICAND_SIGNED {
+            panic!("`number` has too many significant figures for a significand!")
         }
         Self {
             uncertainty: 0,
@@ -210,9 +210,9 @@ impl SciDecimal {
     /// let n = SciDecimal::new_with_uncertainty(251, 3, -3);
     /// assert_eq!(n.to_string(), "0.251(3)");
     /// ```
-    pub fn new_with_uncertainty(number: i64, uncertainty: u32, exponent: i16) -> Self {
-        if !(Self::MIN_SIGNIFICAND_SIGNED..=Self::MAX_SIGNIFICAND_SIGNED).contains(&number) {
-            panic!("{number} has too many significant figures for a significand!")
+    pub const fn new_with_uncertainty(number: i64, uncertainty: u32, exponent: i16) -> Self {
+        if number < Self::MIN_SIGNIFICAND_SIGNED || number > Self::MAX_SIGNIFICAND_SIGNED {
+            panic!("`number` has too many significant figures for a significand!")
         }
         Self {
             uncertainty,
@@ -262,14 +262,14 @@ impl SciDecimal {
     /// let n = SciDecimal::from_scientific_parts(2, 2, 0, 3, -2);
     /// assert_eq!(n.to_string(), "0.0200(3)");
     /// ```
-    pub fn from_scientific_parts(
+    pub const fn from_scientific_parts(
         integer: i8,
         zeros: u8,
         fraction: u64,
         uncertainty: u32,
         exponent: i16,
     ) -> Self {
-        let unsigned_integer: u64 = integer.unsigned_abs().into();
+        let unsigned_integer = integer.unsigned_abs() as u64;
         let (significand, exponent) = {
             if fraction != 0 || zeros != 0 {
                 let decimal_places = if fraction == 0 {
@@ -286,7 +286,7 @@ impl SciDecimal {
             }
         };
         if significand > Self::MAX_SIGNIFICAND {
-            panic!("{significand} has too many significant figures for a significand!")
+            panic!("`significand` has too many significant figures for a significand!")
         }
         Self {
             uncertainty,
