@@ -419,17 +419,23 @@ impl SciDecimal {
     ///
     /// This function panics if the increase would result in `significand`,
     /// `exponent`, or `uncertainty_scale` exceeding their maximum values.
+    /// The arithmetic operations used are the strict ones i.e. they panic on
+    /// overflow, regardless of whether overflow checks are enabled.
     pub fn increase_precision(mut self, sf: u8) -> Self {
         if !self.is_normal() {
             todo!("Special values are not yet handled correctly by this method!")
         }
         for _ in 0..sf {
-            self.significand *= 10;
+            self.significand = self.significand.strict_mul(10);
+            // Check that it's not larger than allowed (16 sf)
+            if self.significand > Self::MAX_SIGNIFICAND {
+                panic!("Maximum precision (16 sf) exceeded!")
+            }
             // Exponent is now too large
-            self.exponent -= 1;
+            self.exponent = self.exponent.strict_sub(1);
             // Uncertainty is now too small
             if !self.is_exact() {
-                self.uncertainty_scale += 1;
+                self.uncertainty_scale = self.uncertainty_scale.strict_add(1);
             };
         }
         self
@@ -451,6 +457,71 @@ impl SciDecimal {
             if self.significand > Self::MAX_SIGNIFICAND {
                 return None;
             }
+            // Exponent is now too large
+            self.exponent = self.exponent.checked_sub(1)?;
+            // Uncertainty is now too small
+            if !self.is_exact() {
+                match self.uncertainty_scale.checked_add(1) {
+                    Some(s) => self.uncertainty_scale = s,
+                    None => {
+                        // In the rare case that we can't increase the uncertainty
+                        // scale we increase the uncertainty significand instead
+                        self.uncertainty = self.uncertainty.checked_mul(10)?;
+                    }
+                }
+            };
+        }
+        Some(self)
+    }
+
+    /// Increases the precision of the number by adding `sf` additional
+    /// significant zeros to the significand, permitting values for the
+    /// significand greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
+    ///
+    /// This is equivalent to decreasing the exponent by `sf`.
+    ///
+    /// The uncertainty of the `SciDecimal` is left unchanged.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the increase would result in `significand`
+    /// exceeding `u64::MAX` or in `exponent` or `uncertainty_scale` exceeding
+    /// their maximum values.
+    /// The arithmetic operations used are the strict ones i.e. they panic on
+    /// overflow, regardless of whether overflow checks are enabled.
+    #[allow(unused)]
+    fn increase_precision_unbounded(mut self, sf: u8) -> Self {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        for _ in 0..sf {
+            self.significand = self.significand.strict_mul(10);
+            // But explicitly *don't* check if it exceeds 16 sf!
+            // Exponent is now too large
+            self.exponent = self.exponent.strict_sub(1);
+            // Uncertainty is now too small
+            if !self.is_exact() {
+                self.uncertainty_scale = self.uncertainty_scale.strict_add(1);
+            };
+        }
+        self
+    }
+
+    /// Increases the precision of the number by adding `sf` additional
+    /// significant zeros to the significand, without panicking, permitting
+    /// values for the significand greater than `SciDecimal::MAX_SIGNIFICAND`
+    /// and up to `u64::MAX`.
+    ///
+    /// This is equivalent to decreasing the exponent by `sf`.
+    ///
+    /// The uncertainty of the `SciDecimal` is left unchanged.
+    fn increase_precision_unbounded_checked(mut self, sf: u8) -> Option<Self> {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        for _ in 0..sf {
+            self.significand = self.significand.checked_mul(10)?;
+            // But explicitly *don't* check if it exceeds 16 sf!
             // Exponent is now too large
             self.exponent = self.exponent.checked_sub(1)?;
             // Uncertainty is now too small
@@ -1458,35 +1529,41 @@ impl Mul for &SciDecimal {
     }
 }
 
-impl Div for SciDecimal {
-    type Output = Self;
-
-    fn div(self, rhs: Self) -> Self {
+/// Arithmetic operations that return results with potentially excess precision,
+/// useful for intermediate results to avoid rounding errors, but not to be
+/// returned to the end user
+impl SciDecimal {
+    /// Calculates `self / rhs`, permitting values for the significand
+    /// greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
+    ///
+    /// Returns a tuple of the result along with a boolean indicating whether
+    /// the maximum significand precision has been exceeded.
+    fn unbounded_div(self, rhs: Self) -> (Self, bool) {
         // Handle NaN
         if self.nan | rhs.nan {
-            return Self::NAN;
+            return (Self::NAN, false);
         }
         let negative = self.negative ^ rhs.negative;
         // Handle infinities
         match (self.inf, rhs.inf) {
             (true, true) => {
                 // ∞/∞ is undefined
-                return Self::NAN;
+                return (Self::NAN, false);
             }
             (true, false) => {
                 // ∞/n = ∞ for all n, including 0
                 if negative {
-                    return Self::NEG_INFINITY;
+                    return (Self::NEG_INFINITY, false);
                 } else {
-                    return Self::INFINITY;
+                    return (Self::INFINITY, false);
                 }
             }
             (false, true) => {
                 // n/∞ = 0 for all n, including 0
                 if negative {
-                    return Self::NEG_ZERO;
+                    return (Self::NEG_ZERO, false);
                 } else {
-                    return Self::ZERO;
+                    return (Self::ZERO, false);
                 }
             }
             (false, false) => {}
@@ -1495,38 +1572,55 @@ impl Div for SciDecimal {
         if rhs.is_zero() {
             if self.is_zero() {
                 // 0/0 is undefined
-                return Self::NAN;
+                return (Self::NAN, false);
             } else if negative {
-                return Self::NEG_INFINITY;
+                return (Self::NEG_INFINITY, false);
             } else {
-                return Self::INFINITY;
+                return (Self::INFINITY, false);
+            }
+        }
+        if self.is_zero() {
+            // Already checked for rhs being zero
+            if negative {
+                return (Self::NEG_ZERO, false);
+            } else {
+                return (Self::ZERO, false);
             }
         }
         // Increase precision of the numerator until the denominator goes into
-        // it an exact number of times, or until the maximum precision is
-        // reached
+        // it an exact number of times, or until the maximum precision - of
+        // `u64` - is reached
         let mut lhs = self;
-        let mut iterations: u8 = 0;
-        let mut max_precision_reached = false;
+        let mut sf = lhs.sf();
+        //let mut iterations: u8 = 0;
+        // Loop because we only want to increase the precision as much as we
+        // absolutely have to
         while !lhs.significand.is_multiple_of(rhs.significand) {
-            iterations += 1;
-            if iterations > 100 {
-                panic!("{}", iterations)
-            }
-            match lhs.increase_precision_checked(1) {
-                Some(new) => lhs = new,
+            // iterations += 1;
+            // if iterations > 100 {
+            //     panic!("{}", iterations)
+            // }
+            // Crucially, we allow the precision to increase beyond 16 sf up to
+            // the maximum of `u64`
+            // Only allowing 16 sf means that the max significand is
+            // 0b0000000000100011100001101111001001101111110000001111111111111111
+            // which fits into 54 bits
+            // This gives us ~10 bits of spare precision to use (~3 sig figs)
+            match lhs.increase_precision_unbounded_checked(1) {
+                Some(new) => {
+                    lhs = new;
+                    // Since we are increasing by one sf per loop, more efficient
+                    // to just keep track of the known increase rather than
+                    // recalculate it later
+                    sf += 1;
+                }
                 None => {
-                    max_precision_reached = true;
+                    // Max precision was already reached last iteration
                     break;
                 }
             }
         }
-        let significand = if max_precision_reached {
-            // TODO Go via u128 and then round (not truncate) to precision of u64
-            lhs.significand / rhs.significand
-        } else {
-            lhs.significand / rhs.significand
-        };
+        let significand = lhs.significand / rhs.significand;
         let exponent = lhs.exponent - rhs.exponent;
         let exact = Self {
             uncertainty: 0,
@@ -1537,13 +1631,28 @@ impl Div for SciDecimal {
             exponent,
             significand,
         };
-        if self.is_exact() && rhs.is_exact() {
+        let result = if self.is_exact() && rhs.is_exact() {
             exact
         } else {
             let uncertainty =
                 (lhs.relative_uncertainty().powi(2) + rhs.relative_uncertainty().powi(2)).sqrt()
                     * exact.abs();
             exact.with_uncertainty(uncertainty)
+        };
+        debug_assert_eq!(sf > 16, significand > Self::MAX_SIGNIFICAND);
+        (result, sf > 16)
+    }
+}
+
+impl Div for SciDecimal {
+    type Output = Self;
+
+    fn div(self, rhs: Self) -> Self {
+        let (result, excess_precision) = self.unbounded_div(rhs);
+        if excess_precision {
+            result.round_sf(16, RoundingMode::HalfUp)
+        } else {
+            result
         }
     }
 }
@@ -2860,14 +2969,18 @@ mod tests {
             SciDecimal::new(30, 0) / SciDecimal::new(60, 0),
             SciDecimal::new(3, 6) / SciDecimal::new(6, 6),
         );
-        // Recurring results
+        // Recurring results to confirm rounding behaviour
         assert_eq!(
             (SciDecimal::new(1, 0) / SciDecimal::new(3, 0)),
-            SciDecimal::new(3333333333333333333, -19),
+            SciDecimal::new(3333333333333333, -16),
+        );
+        assert_eq!(
+            (SciDecimal::new(2, 0) / SciDecimal::new(3, 0)),
+            SciDecimal::new(6666666666666667, -16),
         );
         assert_eq!(
             (SciDecimal::new(1, 0) / SciDecimal::new(9, 0)),
-            SciDecimal::new(1111111111111111111, -19),
+            SciDecimal::new(1111111111111111, -16),
         );
     }
 

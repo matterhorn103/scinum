@@ -4,13 +4,20 @@ use num_traits::Zero;
 
 #[derive(Debug, Clone, Copy)]
 pub enum RoundingMode {
-    HalfUp,   // Traditional "rounding up"
-    HalfDown, // Traditional "rounding down"
-    HalfEven, // Bankers' rounding
-    Up,       // Away from zero
-    Down,     // Towards zero
-    Ceiling,  // Towards positive infinity
-    Floor,    // Towards negative infinity
+    /// Traditional "rounding up" – to the nearest, with ties going away from zero.
+    HalfUp,
+    /// Traditional "rounding down" – to the nearest, with ties going towards zero.
+    HalfDown,
+    /// Bankers' rounding  – to the nearest, with ties going whichever way gives an even result.
+    HalfEven,
+    /// Away from zero.
+    Up,
+    /// Towards zero.
+    Down,
+    /// Towards positive infinity.
+    Ceiling,
+    /// Towards negative infinity.
+    Floor,
 }
 
 impl From<RoundingMode> for rust_decimal::RoundingStrategy {
