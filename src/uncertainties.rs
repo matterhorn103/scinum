@@ -8,39 +8,37 @@ use num_traits::Float;
 // and σ_b are the standard deviations of a and b, and the result c has standard
 // deviation σ_c:
 // σ_c² = |δf/δa|²⋅σ_a² + |δf/δb|²⋅σ_b² + 2⋅(δf/δa)⋅(δf/δb)⋅σ_ab
-// Where the covariance between a and b, σ_ab, is given by:
+// where the covariance between a and b, σ_ab, is given by:
 // σ_ab = ρ_ab⋅σ_a⋅σ_b
 // where ρ_ab is the correlation between a and b.
 
-// We can't do the calculus programmatically. But given some variables:
+// We can't do the calculus programmatically. But we can write a function that
+// takes two closures:
 // 1. A closure for δf/δa
 // 2. A closure for δf/δb
-// 3. The value of a
-// 4. The value of b
-// 5. The uncertainty σ_a
-// 6. The uncertainty σ_b
-// 7. The correlation ρ_ab
 //
-// we can calculate the uncertainty using a single universal function.
-//
-// Moreover, we can write a function that takes the two closures and returns a
-// new closure for the uncertainty.
-//a: N,
-//b: N,
-//σ_a: N,
-//σ_b: N,
-//ρ_ab: N,
+// and returns a new closure for the uncertainty that takes:
+// 1. The value of a
+// 2. The value of b
+// 3. The uncertainty σ_a
+// 4. The uncertainty σ_b
+// 5. The correlation ρ_ab
 
 /// Returns a function that calculates the uncertainty σ_c in the result C of
-/// a function f(a, b), where `partderiv_a` and `partderiv_b` are functions
-/// representing the partial derivatives of f(a, b) with respect to a and b.
+/// a non-linear differentiable function f(a, b).
+///
+/// `partderiv_a` and `partderiv_b` are the partial derivatives of f(a, b) with
+/// respect to a and b.
 ///
 /// The returned function is of the form `uncertainty(a, b, σ_a, σ_b, ρ_ab)`
 /// with five arguments:
 /// - `a` and `b` are the values of the two input parameters
 /// - `σ_a` and `σ_b` are the uncertainties (standard deviations) of the input parameters
 /// - `ρ_ab` is the correlation between a and b
-fn uncertainty_fn_generator<N, A, B>(partderiv_a: A, partderiv_b: B) -> impl Fn(N, N, N, N, N) -> N
+pub(crate) fn uncertainty_fn_generator<N, A, B>(
+    partderiv_a: A,
+    partderiv_b: B,
+) -> impl Fn(N, N, N, N, N) -> N
 where
     N: Float,
     A: Fn(N, N) -> N,
