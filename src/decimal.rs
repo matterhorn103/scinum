@@ -1039,29 +1039,19 @@ impl Float for SciDecimal {
     }
 
     /// Raises the number to an integer power.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if `n` is not within the range `-127 <= n <= 127`.
     fn powi(self, n: i32) -> Self {
-        if !self.is_normal() {
-            todo!("Special values are not yet handled correctly by this method!")
-        }
-        if !(-127..128).contains(&n) {
-            panic!()
-        }
-        let exact = if n.is_negative() {
-            self.powi(n.abs()).inv()
+        let (result, excess_precision) = if n <= i8::MAX.into() && n >= i8::MIN.into() {
+            self.unbounded_powi(
+                n.try_into()
+                    .expect("n has already been checked and should fit into even an i8"),
+            )
         } else {
-            let number = self.significand_signed().pow(n.try_into().unwrap());
-            let exponent = self.exponent * i16::try_from(n).unwrap();
-            Self::new(number, exponent)
+            self.unbounded_powf(n.into())
         };
-        if self.is_exact() {
-            exact
+        if excess_precision {
+            result.round_sf(16, RoundingMode::HalfUp)
         } else {
-            let uncertainty = (self.relative_uncertainty() * n.into()) * exact.abs();
-            exact.with_uncertainty(uncertainty)
+            result
         }
     }
 
@@ -1339,46 +1329,39 @@ impl PartialOrd for SciDecimal {
     }
 }
 
-impl Add for SciDecimal {
-    type Output = Self;
-
-    /// Performs the `+` operation.
+/// Arithmetic operations that return results with potentially excess precision,
+/// useful for intermediate results to avoid rounding errors, but not to be
+/// returned to the end user.
+impl SciDecimal {
+    /// Calculates `self + rhs`, permitting values for the significand
+    /// greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
     ///
-    /// # Special values
-    ///
-    /// - ±0: no special behaviour
-    ///
-    /// - ±∞: if one number is an infinity, that infinity is returned; otherwise:
-    ///   - ∞ + ∞ → ∞
-    ///   - -∞ + -∞ → -∞
-    ///   - ∞ - ∞ → `NaN`
-    ///   - -∞ + ∞ → `NaN`
-    ///
-    /// - `NaN`: if either number is `NaN`, returns `NaN`
-    fn add(self, rhs: Self) -> Self {
+    /// Returns a tuple of the result along with a boolean indicating whether
+    /// the maximum significand precision has been exceeded.
+    fn unbounded_add(self, rhs: Self) -> (Self, bool) {
         // TODO If significand would be too large for u64, just round it and
         // increase the exponent instead of panicking
 
         // Handle NaN
         if self.nan | rhs.nan {
-            return Self::NAN;
+            return (Self::NAN, false);
         }
         // Handle infinities
         match (self.inf, rhs.inf) {
             (true, true) => {
                 if self.negative == rhs.negative {
                     // ∞ + ∞ = ∞, -∞ + -∞ = -∞
-                    return self;
+                    return (self, false);
                 } else {
                     // ∞ - ∞ = NaN
-                    return Self::NAN;
+                    return (Self::NAN, false);
                 }
             }
             (true, false) => {
-                return self;
+                return (self, false);
             }
             (false, true) => {
-                return rhs;
+                return (rhs, false);
             }
             (false, false) => {}
         }
@@ -1404,75 +1387,52 @@ impl Add for SciDecimal {
                 Self::new(number, scaled.exponent)
             }
         };
-        if self.is_exact() && rhs.is_exact() {
+        let result = if self.is_exact() && rhs.is_exact() {
             exact
         } else {
             let uncertainty =
                 ((self.uncertainty().pow(2.into())) + rhs.uncertainty().pow(2.into())).sqrt();
             exact.with_uncertainty(uncertainty)
-        }
+        };
+        (result, result.significand > Self::MAX_SIGNIFICAND)
     }
-}
 
-impl Add for &SciDecimal {
-    type Output = SciDecimal;
-
-    fn add(self, rhs: Self) -> SciDecimal {
-        *self + *rhs
-    }
-}
-
-impl Sub for SciDecimal {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self {
-        let rhs = -rhs;
-        self + rhs
-    }
-}
-
-impl Sub for &SciDecimal {
-    type Output = SciDecimal;
-
-    fn sub(self, rhs: Self) -> SciDecimal {
-        *self - *rhs
-    }
-}
-
-impl Mul for SciDecimal {
-    type Output = Self;
-
-    fn mul(self, rhs: Self) -> Self {
+    /// Calculates `self * rhs`, permitting values for the significand
+    /// greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
+    ///
+    /// Returns a tuple of the result along with a boolean indicating whether
+    /// the maximum significand precision has been exceeded.
+    fn unbounded_mul(self, rhs: Self) -> (Self, bool) {
         // Handle NaN
         if self.nan | rhs.nan {
-            return Self::NAN;
+            return (Self::NAN, false);
         }
         let negative = self.negative ^ rhs.negative;
         // Handle infinities
         match (self.inf, rhs.inf) {
             (true, true) => {
                 if negative {
-                    return Self::NEG_INFINITY;
+                    return (Self::NEG_INFINITY, false);
                 } else {
-                    return Self::INFINITY;
+                    return (Self::INFINITY, false);
                 }
             }
             (true, false) => {
                 if rhs.is_zero() {
-                    return Self::NAN;
+                    return (Self::NAN, false);
                 } else if negative {
-                    return Self::NEG_INFINITY;
+                    return (Self::NEG_INFINITY, false);
                 } else {
-                    return Self::INFINITY;
+                    return (Self::INFINITY, false);
                 }
             }
             (false, true) => {
                 if self.is_zero() {
-                    return Self::NAN;
+                    return (Self::NAN, false);
                 } else if negative {
-                    return Self::NEG_INFINITY;
+                    return (Self::NEG_INFINITY, false);
                 } else {
-                    return Self::INFINITY;
+                    return (Self::INFINITY, false);
                 }
             }
             (false, false) => {}
@@ -1480,15 +1440,26 @@ impl Mul for SciDecimal {
         let (significand, exponent) = match self.significand.checked_mul(rhs.significand) {
             Some(s) => (s, self.exponent + rhs.exponent),
             None => {
-                // Significand multiplication results in overflow, so convert to u128,
-                // do mul (which won't ever overflow), then round
+                // Even though we have ~3 spare decimal digits of precision in
+                // `u64` above our max allowed significand, multiplication can
+                // still result in overflow as
+                // `(10_u64.pow(16) - 1) * (10_u64.pow(16) - 1) == 99999999999999980000000000000001`
+                // which is too large for `u64`:
+                // `99999999999999980000000000000001 / (u64::MAX as u128) == 5421010862427`
+                // but `u128` has plenty of space:
+                // `u128::MAX / 99999999999999980000000000000001 == 3402823`
+                // So, convert to `u128`, do mul (which won't ever overflow), then
+                // truncate to get back to a significand representable as a `u64`
+                // We want to truncate rather than round since we'll have three
+                // excess digits left anyway, meaning we'll have to round later
+                // before returning to the user - if we round now as well then
+                // we'll get cumulative rounding errors!
                 let mut too_wide = (self.significand as u128) * (rhs.significand as u128);
                 let mut e = self.exponent + rhs.exponent;
                 let s: u64 = loop {
                     match u64::try_from(too_wide) {
                         Err(_) => {
-                            // Still too wide so divide by 10
-                            // TODO In future we should round; for now, just truncate
+                            // Still too wide so divide by 10 to truncate
                             too_wide /= 10;
                             e += 1;
                             continue;
@@ -1510,29 +1481,17 @@ impl Mul for SciDecimal {
             exponent,
             significand,
         };
-        if self.is_exact() && rhs.is_exact() {
+        let result = if self.is_exact() && rhs.is_exact() {
             exact
         } else {
             let uncertainty =
                 (self.relative_uncertainty().powi(2) + rhs.relative_uncertainty().powi(2)).sqrt()
                     * exact.abs();
             exact.with_uncertainty(uncertainty)
-        }
+        };
+        (result, significand > Self::MAX_SIGNIFICAND)
     }
-}
 
-impl Mul for &SciDecimal {
-    type Output = SciDecimal;
-
-    fn mul(self, rhs: Self) -> SciDecimal {
-        *self * *rhs
-    }
-}
-
-/// Arithmetic operations that return results with potentially excess precision,
-/// useful for intermediate results to avoid rounding errors, but not to be
-/// returned to the end user
-impl SciDecimal {
     /// Calculates `self / rhs`, permitting values for the significand
     /// greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
     ///
@@ -1642,6 +1601,115 @@ impl SciDecimal {
         debug_assert_eq!(sf > 16, significand > Self::MAX_SIGNIFICAND);
         (result, sf > 16)
     }
+
+    /// Calculates `self.powi(rhs)`, permitting values for the significand
+    /// greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
+    ///
+    /// Returns a tuple of the result along with a boolean indicating whether
+    /// the maximum significand precision has been exceeded.
+    fn unbounded_powi(self, n: i32) -> (Self, bool) {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        let exact = if n.is_negative() {
+            self.powi(n.abs()).inv()
+        } else {
+            let number = self.significand_signed().pow(n.try_into().unwrap());
+            let exponent = self.exponent * i16::try_from(n).unwrap();
+            Self::new(number, exponent)
+        };
+        let result = if self.is_exact() {
+            exact
+        } else {
+            let uncertainty = (self.relative_uncertainty() * n.into()) * exact.abs();
+            exact.with_uncertainty(uncertainty)
+        };
+        (result, result.significand > Self::MAX_SIGNIFICAND)
+    }
+
+    /// Calculates `self.pow(rhs)`, permitting values for the significand
+    /// greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
+    ///
+    /// Returns a tuple of the result along with a boolean indicating whether
+    /// the maximum significand precision has been exceeded.
+    fn unbounded_powf(self, rhs: Self) -> (Self, bool) {
+        if !(self.is_normal() && rhs.is_normal()) {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        todo!()
+    }
+}
+
+impl Add for SciDecimal {
+    type Output = Self;
+
+    /// Performs the `+` operation.
+    ///
+    /// # Special values
+    ///
+    /// - ±0: no special behaviour
+    ///
+    /// - ±∞: if one number is an infinity, that infinity is returned; otherwise:
+    ///   - ∞ + ∞ → ∞
+    ///   - -∞ + -∞ → -∞
+    ///   - ∞ - ∞ → `NaN`
+    ///   - -∞ + ∞ → `NaN`
+    ///
+    /// - `NaN`: if either number is `NaN`, returns `NaN`
+    fn add(self, rhs: Self) -> Self {
+        let (result, excess_precision) = self.unbounded_add(rhs);
+        if excess_precision {
+            result.round_sf(16, RoundingMode::HalfUp)
+        } else {
+            result
+        }
+    }
+}
+
+impl Add for &SciDecimal {
+    type Output = SciDecimal;
+
+    fn add(self, rhs: Self) -> SciDecimal {
+        *self + *rhs
+    }
+}
+
+impl Sub for SciDecimal {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self {
+        let rhs = -rhs;
+        self + rhs
+    }
+}
+
+impl Sub for &SciDecimal {
+    type Output = SciDecimal;
+
+    fn sub(self, rhs: Self) -> SciDecimal {
+        *self - *rhs
+    }
+}
+
+impl Mul for SciDecimal {
+    type Output = Self;
+
+    fn mul(self, rhs: Self) -> Self {
+        let (result, excess_precision) = self.unbounded_mul(rhs);
+        if excess_precision {
+            result.round_sf(16, RoundingMode::HalfUp)
+        } else {
+            result
+        }
+    }
+}
+
+impl Mul for &SciDecimal {
+    type Output = SciDecimal;
+
+    fn mul(self, rhs: Self) -> SciDecimal {
+        *self * *rhs
+    }
 }
 
 impl Div for SciDecimal {
@@ -1670,8 +1738,8 @@ impl Rem for SciDecimal {
 
     /// Performs the `%` operation.
     ///
-    /// NOTE: Uncertainty propagation is not implemented for this method,
-    /// and the returned result is exact.
+    /// WARNING: Uncertainty propagation is not yet implemented for this method,
+    /// and the returned result will be exact.
     fn rem(self, rhs: Self) -> Self {
         // Handle NaN
         if self.nan | rhs.nan {
@@ -1716,25 +1784,23 @@ impl Pow<Self> for SciDecimal {
     type Output = Self;
 
     /// Raise the `SciDecimal` to a `SciDecimal` power.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if `rhs` is not within the range `-127 <= n <= 127`.
     fn pow(self, rhs: Self) -> Self {
-        if !(self.is_normal() & rhs.is_normal()) {
-            todo!("Special values are not yet handled correctly by this method!")
-        }
-        if rhs > SciDecimal::from(127) || rhs < SciDecimal::from(-127) {
-            panic!()
-        }
-        if rhs.is_exact() && rhs.exponent.is_zero() {
+        let (result, excess_precision) = if rhs.is_exact()
+            && rhs.exponent.is_zero()
+            && (rhs.exponent <= i8::MAX.into() && rhs.exponent >= i8::MIN.into())
+        {
             let n = rhs.significand_signed();
-            self.powi(
+            self.unbounded_powi(
                 n.try_into()
                     .expect("n has already been checked and should fit into even an i8"),
             )
         } else {
-            todo!()
+            self.unbounded_powf(rhs)
+        };
+        if excess_precision {
+            result.round_sf(16, RoundingMode::HalfUp)
+        } else {
+            result
         }
     }
 }
@@ -2875,6 +2941,18 @@ mod tests {
         let n1 = SciDecimal::new(20, 0);
         let n2 = SciDecimal::new(30, 0);
         assert_eq!(n1 * n2, sci!(600));
+        // Large values to confirm rounding behaviour
+        // Max significand is 9_999_999_999_999_999
+        // First, where the true significand doesn't even fit into a u64
+        let n1 = SciDecimal::new(99_999_999_999_999, 0);
+        let n2 = SciDecimal::new(89_999_999_999_999, 0);
+        // Result = 8999999999999810000000000001 ≈ 8_999_999_999_999_810 * 10^12
+        assert_eq!(n1 * n2, SciDecimal::new(8_999_999_999_999_810, 12));
+        // Then check where the true significand just exceeds 16 sf but not u64::MAX
+        let n1 = SciDecimal::new(999_999_999, 0);
+        let n2 = SciDecimal::new(899_999_999, 0);
+        // Result = 899_999_998_100_000_001 ≈ 8_999_999_981_000_000 * 10^2
+        assert_eq!(n1 * n2, SciDecimal::new(8_999_999_981_000_000, 2));
     }
 
     #[test]
