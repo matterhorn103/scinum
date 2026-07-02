@@ -19,6 +19,14 @@ pub trait SciNum: Num + Inv + TryFrom<SciDecimal> {
     /// Returns the absolute uncertainty as an exact number.
     ///
     /// The uncertainty is always positive.
+    ///
+    /// # Special values
+    ///
+    /// - ±0 → the actual uncertainty (0 ± 3 is perfectly valid, for example)
+    ///
+    /// - ±∞ → ∞
+    ///
+    /// - `NaN` → `NaN`
     fn uncertainty(&self) -> Self::Number;
 
     /// Returns the relative uncertainty as an exact number.
@@ -35,6 +43,28 @@ pub trait SciNum: Num + Inv + TryFrom<SciDecimal> {
     fn is_exact(&self) -> bool {
         self.uncertainty().is_zero()
     }
+
+    /// Returns the scale of the least significant place.
+    fn precision(&self) -> i16;
+
+    /// Returns the scale of the most significant place.
+    fn precision_most_significant_fig(&self) -> i16;
+
+    /// Returns the scale of the least significant place of the uncertainty.
+    fn precision_uncertainty(&self) -> Option<i16>;
+
+    /// Returns the number of significant decimal digits after the radix point
+    /// when expressed in normal (non-scientific) notation, including leading
+    /// zeros.
+    fn dp(&self) -> u16;
+
+    /// Returns the number of significant decimal digits in the significand.
+    /// 0 is considered to have 0 significant figures.
+    fn sf(&self) -> u8;
+
+    /// Returns the number of significant decimal digits in the uncertainty.
+    /// 0 is considered to have 0 significant figures.
+    fn sf_uncertainty(&self) -> u8;
 
     /// Rounds to the specified precision i.e. to 10<sup>(prec)</sup>.
     ///
@@ -164,4 +194,17 @@ pub trait SciNum: Num + Inv + TryFrom<SciDecimal> {
     /// This function will panic if the requested precision cannot be represented
     /// by the type.
     fn round_uncertainty_match_number(self, mode: RoundingMode) -> Self;
+
+    /// Removes significant figures from the significand to afford the desired
+    /// number.
+    ///
+    /// Equivalent to rounding towards zero.
+    ///
+    /// The uncertainty of the `SciNum` is left unchanged.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the `SciNum` already has fewer significant figures
+    /// than the requested number.
+    fn trunc_sf(self, sf: u8) -> Self;
 }

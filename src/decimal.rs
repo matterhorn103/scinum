@@ -39,7 +39,7 @@ pub struct SciDecimal {
     significand: u64,
 }
 
-// Constants that don't belong to specific traits
+/// Constants that don't belong to specific trait implementations.
 impl SciDecimal {
     /// The maximum supported (unsigned) significand.
     ///
@@ -300,7 +300,7 @@ impl SciDecimal {
     }
 }
 
-// Methods for obtaining parts of the contained data
+/// Methods for obtaining parts of the contained data.
 impl SciDecimal {
     /// Returns the integer part, number of fractional leading zeros,
     /// fractional part, uncertainty, and exponent of the number when represented
@@ -309,9 +309,18 @@ impl SciDecimal {
     /// Corresponds to `(ii, z, fff, uu, nn)` when the number is notated as
     /// `ii.{zeros}fff(uu) × 10^nn`, where `z` is the number of leading zeros
     /// in the fractional part.
-    pub fn scientific_parts(&self) -> (i8, u8, u64, u32, i16) {
+    ///
+    /// # Special values
+    ///
+    /// Unlike `significand()`, `sign()`, and `exponent()`, this method does not
+    /// just return the stored values in all cases.
+    ///
+    /// - ±0 → `Some((0, 0, 0, 0, 0))`
+    ///
+    /// - ±∞ and `NaN` → `None`
+    pub fn scientific_parts(&self) -> Option<(i8, u8, u64, u32, i16)> {
         if self.is_zero() {
-            return (0, 0, 0, 0, 0);
+            return Some((0, 0, 0, 0, 0));
         };
         if !self.is_normal() {
             todo!("Special values are not yet handled correctly by this method!")
@@ -335,7 +344,7 @@ impl SciDecimal {
         // 4.5e-3 = 0.0045 is stored as (45, -4)    => -3 = -4 + (2 - 1)
         // 4.51e-3 = 0.00451 is stored as (451, -5) => -3 = -5 + (3 - 1)
         // 4.50e-3 = 0.00450 is stored as (450, -5) => -3 = -5 + (3 - 1)
-        (int, zeros, frac, uncert, exp)
+        Some((int, zeros, frac, uncert, exp))
     }
 
     /// Returns the signed significand _m_ of the number when represented with
@@ -396,115 +405,11 @@ impl SciDecimal {
     }
 }
 
-// Precision, figures, and rounding
+/// Methods for precision, figures, and rounding that aren't part of the `SciNum`
+/// implementation.
 impl SciDecimal {
-    /// Returns the scale of the least significant place.
-    ///
-    /// For example:
-    /// - 0.02 returns -2
-    /// - 0.020 returns -3
-    /// - 2 returns 0
-    /// - 200 returns 2 or 1 or 0, depending on the precision of the number
-    #[inline]
-    pub fn precision(&self) -> i16 {
-        if !self.is_normal() {
-            todo!("Special values are not yet handled correctly by this method!")
-        }
-        self.exponent
-    }
-
-    /// Returns the scale of the most significant place.
-    ///
-    /// This is equivalent to the exponent _n_ of the number when represented with
-    /// normalized notation i.e. with 10 > _m_ >= 1.
-    ///
-    /// For example:
-    /// - 0.02 returns -2
-    /// - 0.025 returns -2
-    /// - 0.020 returns -2
-    /// - 2 returns 0
-    /// - 321 returns 2
-    #[inline]
-    pub fn precision_most_significant_fig(&self) -> i16 {
-        if !self.is_normal() {
-            todo!("Special values are not yet handled correctly by this method!")
-        }
-        self.exponent + (i16::from(self.sf()) - 1)
-    }
-
-    /// Returns the scale of the least significant place of the uncertainty.
-    pub fn precision_uncertainty(&self) -> Option<i16> {
-        if !self.is_normal() {
-            todo!("Special values are not yet handled correctly by this method!")
-        }
-        if self.is_exact() {
-            None
-        } else {
-            Some(self.exponent + self.uncertainty_scale as i16)
-        }
-    }
-
-    /// Returns the number of significant decimal digits in the significand.
-    /// 0 is considered to have 0 significant figures.
-    #[inline]
-    pub fn sf(&self) -> u8 {
-        if !self.is_normal() {
-            todo!("Special values are not yet handled correctly by this method!")
-        }
-        if let Some(log) = self.significand.checked_ilog10() {
-            log as u8 + 1
-        } else {
-            0
-        }
-    }
-
-    /// Returns the number of significant decimal digits after the radix point
-    /// when expressed in normal (non-scientific) notation, including leading
-    /// zeros.
-    #[inline]
-    pub fn dp(&self) -> u16 {
-        if !self.is_normal() {
-            todo!("Special values are not yet handled correctly by this method!")
-        }
-        if self.precision() >= 0 {
-            0
-        } else {
-            self.precision().unsigned_abs()
-        }
-    }
-
-    /// Removes significant figures from the significand until the desired number
-    /// is reached.
-    ///
-    /// Equivalent to rounding towards zero.
-    ///
-    /// The uncertainty of the `SciDecimal` is left unchanged.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if the `SciDecimal` already has fewer significant figures
-    /// than the requested number.
-    pub fn trunc_sf(mut self, sf: u8) -> Self {
-        if !self.is_normal() {
-            todo!("Special values are not yet handled correctly by this method!")
-        }
-        if self.sf() < sf {
-            panic!()
-        };
-        while self.sf() > sf {
-            self.significand /= 10;
-            // Exponent is now too small
-            self.exponent += 1;
-            // Uncertainty is now too large
-            if !self.is_exact() {
-                self.uncertainty_scale -= 1;
-            };
-        }
-        self
-    }
-
-    /// Increases the precision of the number by adding additional significant zeros
-    /// to the significand.
+    /// Increases the precision of the number by adding `sf` additional
+    /// significant zeros to the significand.
     ///
     /// This is equivalent to decreasing the exponent by `sf`.
     ///
@@ -530,23 +435,34 @@ impl SciDecimal {
         self
     }
 
-    /// Increases the precision of the number by adding additional significant zeros
-    /// to the significand, without panicking.
+    /// Increases the precision of the number by adding `sf` additional
+    /// significant zeros to the significand, without panicking.
     ///
     /// This is equivalent to decreasing the exponent by `sf`.
     ///
     /// The uncertainty of the `SciDecimal` is left unchanged.
-    pub fn checked_increase_precision(mut self, sf: u8) -> Option<Self> {
+    pub fn increase_precision_checked(mut self, sf: u8) -> Option<Self> {
         if !self.is_normal() {
             todo!("Special values are not yet handled correctly by this method!")
         }
         for _ in 0..sf {
             self.significand = self.significand.checked_mul(10)?;
+            // Also check that it's not larger than allowed (16 sf)
+            if self.significand > Self::MAX_SIGNIFICAND {
+                return None;
+            }
             // Exponent is now too large
             self.exponent = self.exponent.checked_sub(1)?;
             // Uncertainty is now too small
             if !self.is_exact() {
-                self.uncertainty_scale += 1;
+                match self.uncertainty_scale.checked_add(1) {
+                    Some(s) => self.uncertainty_scale = s,
+                    None => {
+                        // In the rare case that we can't increase the uncertainty
+                        // scale we increase the uncertainty significand instead
+                        self.uncertainty = self.uncertainty.checked_mul(10)?;
+                    }
+                }
             };
         }
         Some(self)
@@ -576,7 +492,6 @@ impl SciNum for SciDecimal {
         significand: 1,
     };
 
-    /// Returns the number as an exact `SciDecimal` without its uncertainty.
     #[inline]
     fn number(&self) -> Self {
         Self {
@@ -586,12 +501,6 @@ impl SciNum for SciDecimal {
         }
     }
 
-    /// Returns the absolute uncertainty as an exact `SciDecimal`.
-    ///
-    /// The uncertainty is always positive.
-    ///
-    /// An infinity always has an uncertainty of (positive) infinity, and `NaN`
-    /// always has an uncertainty of `NaN`.
     #[inline]
     fn uncertainty(&self) -> Self {
         if self.nan {
@@ -663,6 +572,88 @@ impl SciNum for SciDecimal {
             todo!("Special values are not yet handled correctly by this method!")
         }
         self.uncertainty == 0
+    }
+
+    /// Returns the scale of the least significant place.
+    ///
+    /// For example:
+    /// - 0.02 returns -2
+    /// - 0.020 returns -3
+    /// - 2 returns 0
+    /// - 200 returns 2 or 1 or 0, depending on the precision of the number
+    #[inline]
+    fn precision(&self) -> i16 {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        self.exponent
+    }
+
+    /// Returns the scale of the most significant place.
+    ///
+    /// This is equivalent to the exponent _n_ of the number when represented with
+    /// normalized notation i.e. with 10 > _m_ >= 1.
+    ///
+    /// For example:
+    /// - 0.02 returns -2
+    /// - 0.025 returns -2
+    /// - 0.020 returns -2
+    /// - 2 returns 0
+    /// - 321 returns 2
+    #[inline]
+    fn precision_most_significant_fig(&self) -> i16 {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        self.exponent + (i16::from(self.sf()) - 1)
+    }
+
+    /// Returns the scale of the least significant place of the uncertainty.
+    fn precision_uncertainty(&self) -> Option<i16> {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        if self.is_exact() {
+            None
+        } else {
+            Some(self.exponent + self.uncertainty_scale as i16)
+        }
+    }
+
+    #[inline]
+    fn dp(&self) -> u16 {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        if self.precision() >= 0 {
+            0
+        } else {
+            self.precision().unsigned_abs()
+        }
+    }
+
+    #[inline]
+    fn sf(&self) -> u8 {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        if let Some(log) = self.significand.checked_ilog10() {
+            log as u8 + 1
+        } else {
+            0
+        }
+    }
+
+    #[inline]
+    fn sf_uncertainty(&self) -> u8 {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        if let Some(log) = self.uncertainty.checked_ilog10() {
+            log as u8 + 1
+        } else {
+            0
+        }
     }
 
     fn round_precision(self, prec: i16, mode: RoundingMode) -> Self {
@@ -800,6 +791,25 @@ impl SciNum for SciDecimal {
         } else {
             self.with_uncertainty(self.uncertainty().round_precision(self.precision(), mode))
         }
+    }
+
+    fn trunc_sf(mut self, sf: u8) -> Self {
+        if !self.is_normal() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        if self.sf() < sf {
+            panic!()
+        };
+        while self.sf() > sf {
+            self.significand /= 10;
+            // Exponent is now too small
+            self.exponent += 1;
+            // Uncertainty is now too large
+            if !self.is_exact() {
+                self.uncertainty_scale -= 1;
+            };
+        }
+        self
     }
 }
 
@@ -1261,6 +1271,19 @@ impl PartialOrd for SciDecimal {
 impl Add for SciDecimal {
     type Output = Self;
 
+    /// Performs the `+` operation.
+    ///
+    /// # Special values
+    ///
+    /// - ±0: no special behaviour
+    ///
+    /// - ±∞: if one number is an infinity, that infinity is returned; otherwise:
+    ///   - ∞ + ∞ → ∞
+    ///   - -∞ + -∞ → -∞
+    ///   - ∞ - ∞ → `NaN`
+    ///   - -∞ + ∞ → `NaN`
+    ///
+    /// - `NaN`: if either number is `NaN`, returns `NaN`
     fn add(self, rhs: Self) -> Self {
         // TODO If significand would be too large for u64, just round it and
         // increase the exponent instead of panicking
@@ -1490,7 +1513,7 @@ impl Div for SciDecimal {
             if iterations > 100 {
                 panic!("{}", iterations)
             }
-            match lhs.checked_increase_precision(1) {
+            match lhs.increase_precision_checked(1) {
                 Some(new) => lhs = new,
                 None => {
                     max_precision_reached = true;
@@ -1715,7 +1738,7 @@ impl fmt::Display for SciDecimal {
             }
         // Otherwise, use scientific notation
         } else {
-            let (int, zeros, frac, _, exp) = self.scientific_parts();
+            let (int, zeros, frac, _, exp) = self.scientific_parts().unwrap();
             let zeros = "0".repeat(zeros.into());
             // Fractional part might not have any places at all (e.g. 2e6)
             if frac == 0 {

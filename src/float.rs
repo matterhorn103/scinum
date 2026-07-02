@@ -144,8 +144,16 @@ impl SciNum for SciFloat {
     ///
     /// The uncertainty is always positive.
     ///
-    /// An infinity always has an uncertainty of (positive) infinity, and `NaN`
-    /// always has an uncertainty of `NaN`.
+    /// # Special values
+    ///
+    /// - ±0 → the actual uncertainty (0 ± 3 is perfectly valid, for example)
+    ///
+    /// - ±∞ → ∞
+    ///
+    /// - `NaN` → `NaN`
+    ///
+    /// Note that the uncertainty itself may well be ∞ or `NaN` as a result of
+    /// arithmetic operations.
     #[inline]
     fn uncertainty(&self) -> f64 {
         if self.is_nan() {
@@ -184,6 +192,30 @@ impl SciNum for SciFloat {
         self.uncertainty == 0.0
     }
 
+    fn precision(&self) -> i16 {
+        todo!()
+    }
+
+    fn precision_most_significant_fig(&self) -> i16 {
+        todo!()
+    }
+
+    fn precision_uncertainty(&self) -> Option<i16> {
+        todo!()
+    }
+
+    fn dp(&self) -> u16 {
+        todo!()
+    }
+
+    fn sf(&self) -> u8 {
+        todo!()
+    }
+
+    fn sf_uncertainty(&self) -> u8 {
+        todo!()
+    }
+
     fn round_precision(self, prec: i16, mode: RoundingMode) -> Self {
         todo!()
     }
@@ -217,6 +249,10 @@ impl SciNum for SciFloat {
     }
 
     fn round_uncertainty_match_number(self, mode: RoundingMode) -> Self {
+        todo!()
+    }
+
+    fn trunc_sf(self, sf: u8) -> Self {
         todo!()
     }
 }
