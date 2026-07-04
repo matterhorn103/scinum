@@ -322,7 +322,7 @@ impl SciDecimal {
         if self.is_zero() {
             return Some((0, 0, 0, 0, 0));
         };
-        if !self.is_normal() {
+        if !self.is_finite() {
             todo!("Special values are not yet handled correctly by this method!")
         }
         let figs = self.sf() as u32;
@@ -422,7 +422,7 @@ impl SciDecimal {
     /// The arithmetic operations used are the strict ones i.e. they panic on
     /// overflow, regardless of whether overflow checks are enabled.
     pub fn increase_precision(mut self, sf: u8) -> Self {
-        if !self.is_normal() {
+        if !self.is_finite() {
             todo!("Special values are not yet handled correctly by this method!")
         }
         for _ in 0..sf {
@@ -538,6 +538,207 @@ impl SciDecimal {
         }
         Some(self)
     }
+}
+
+/// Additional constants.
+impl SciDecimal {
+    // TODO Add more of the constants that f64 has https://doc.rust-lang.org/std/f64/consts/index.html
+
+    pub const TWO: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: false,
+        exponent: 0,
+        significand: 2,
+    };
+
+    pub const NEG_ONE: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: 0,
+        significand: 1,
+    };
+
+    /// The mathematical constant *π*.
+    pub const PI: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: -15,
+        significand: 3_141_592_653_589_793,
+    };
+
+    /// The mathematical constant *π*, with 19 sf for internal use.
+    const PI_PRECISE: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: -18,
+        significand: 3_141_592_653_589_793_238,
+    };
+
+    /// The mathematical constant *e*.
+    pub const E: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: -15,
+        significand: 2_718_281_828_459_045,
+    };
+
+    /// The mathematical constant *e*, with 19 sf for internal use.
+    const E_PRECISE: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: -15,
+        significand: 2_718_281_828_459_045_235,
+    };
+
+    /// The natural logarithm of 2, ln(2) = logₑ(2).
+    pub const LN_2: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: -16,
+        significand: 693_147_180_559_945_3,
+    };
+
+    /// The natural logarithm of 2, ln(2) = logₑ(2), with 19 sf for internal use.
+    const LN_2_PRECISE: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: -19,
+        significand: 693_147_180_559_945_309_4,
+    };
+
+    /// The natural logarithm of 10, ln(10) = logₑ(10).
+    pub const LN_10: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: -15,
+        significand: 2_302_585_092_994_046,
+    };
+
+    /// The natural logarithm of 10, ln(10) = logₑ(10), with 19 sf for internal use.
+    const LN_10_PRECISE: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: -18,
+        significand: 2_302_585_092_994_045_684,
+    };
+
+    /// The base-2 logarithm of *e*, log₂(*e*).
+    pub const LOG2_E: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: -15,
+        significand: 1_442_695_040_888_963,
+    };
+
+    /// The base-2 logarithm of *e*, log₂(*e*), with 19 sf for internal use.
+    const LOG2_E_PRECISE: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: -18,
+        significand: 1_442_695_040_888_963_407,
+    };
+
+    /// The base-2 logarithm of 10, log₂(10).
+    pub const LOG2_10: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: -15,
+        significand: 3_321_928_094_887_362,
+    };
+
+    /// The base-2 logarithm of 10, log₂(10), with 19 sf for internal use.
+    const LOG2_10_PRECISE: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: -18,
+        significand: 3_321_928_094_887_362_348,
+    };
+
+    /// The base-10 logarithm of 2, log₁₀(2).
+    pub const LOG10_2: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: -16,
+        significand: 301_029_995_663_981_2,
+    };
+
+    /// The base-10 logarithm of 2, log₁₀(2), with 19 sf for internal use.
+    const LOG10_2_PRECISE: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: -19,
+        significand: 301_029_995_663_981_195_2,
+    };
+
+    /// The base-10 logarithm of *e*, log₁₀(*e*).
+    pub const LOG10_E: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: -16,
+        significand: 434_294_481_903_251_8,
+    };
+
+    /// The base-10 logarithm of *e*, log₁₀(*e*), with 19 sf for internal use.
+    const LOG10_E_PRECISE: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        nan: false,
+        inf: false,
+        negative: true,
+        exponent: -19,
+        significand: 434_294_481_903_251_827_7,
+    };
 }
 
 impl SciNum for SciDecimal {
@@ -964,11 +1165,11 @@ impl Float for SciDecimal {
     }
 
     fn floor(self) -> Self {
-        todo!()
+        self.round_precision(0, RoundingMode::Floor)
     }
 
     fn ceil(self) -> Self {
-        todo!()
+        self.round_precision(0, RoundingMode::Ceiling)
     }
 
     fn round(self) -> Self {
@@ -976,11 +1177,11 @@ impl Float for SciDecimal {
     }
 
     fn trunc(self) -> Self {
-        todo!()
+        self.round_precision(0, RoundingMode::Down)
     }
 
     fn fract(self) -> Self {
-        todo!()
+        self - self.trunc()
     }
 
     fn abs(self) -> Self {
@@ -1069,26 +1270,62 @@ impl Float for SciDecimal {
     }
 
     fn exp(self) -> Self {
-        if !self.is_normal() {
-            todo!("Special values are not yet handled correctly by this method!")
-        }
-        let number = Decimal::try_from(self.number()).unwrap().exp();
+        let exact = Self::E_PRECISE.pow(self);
         if self.is_exact() {
-            Self::try_from(number).unwrap()
+            exact
         } else {
-            let uncertainty = number.abs() * Decimal::try_from(self.uncertainty()).unwrap();
-            Self::try_from(number)
-                .unwrap()
-                .with_uncertainty(uncertainty.try_into().unwrap())
+            // For C = a e^bA, σ_c = |C|×|b × σ_A|
+            // If a = b = 1,   σ_c = |C|×|σ_A|
+            let uncertainty = exact.abs() * self.uncertainty();
+            exact.with_uncertainty(uncertainty)
         }
     }
 
     fn exp2(self) -> Self {
+        let exact = Self::TWO.pow(self);
+        if self.is_exact() {
+            exact
+        } else {
+            // For C = a^bA,    σ_c = |C|×|b × ln(a) × σ_A|
+            // If a = 2, b = 1, σ_c = |C|×|ln(2) × σ_A|
+            let uncertainty = exact.abs() * Self::LN_2_PRECISE * self.uncertainty();
+            exact.with_uncertainty(uncertainty)
+        }
+    }
+
+    // For logarithms, take advantage of logₐx = log₂x/log₂a = log₁₀x/log₁₀a
+    // as for the binary integer significand, log₂ will be efficient, but for
+    // the base 10 exponent log₁₀ is ideal, and for the common bases we have
+    // precomputed values for the divisors as associated constants
+    // Thus, as log(xy) = log(x) + log(y),
+    // we can calculate the result with base a as:
+    //       logₐ(m⋅10^n) = log₂(m⋅10^n) / log₂(a)
+    // and since
+    //       log₂(m⋅10^n) = log₂(m) + log₂(10^n)
+    //                    = log₂(m) + (n⋅log₂(10))
+    // then
+    //       logₐ(m⋅10^n) = (log₂(m)/log₂(a)) + ((n⋅log₂(10)) / log₂(a))
+    //
+    // Increase the precision of m by multiplying it by 2^k (where k is the number
+    // of trailing zeros):
+    //            log₂(m) = log₂(m⋅2^k/2^k)
+    //                    = log₂(m⋅2^k) - log₂(2^k)
+    //                    = log₂(m⋅2^k) - k
+    // therefore
+    //       logₐ(m⋅10^n) = ((log₂(m⋅2^k) - k)/log₂(a)) + ((n⋅log₂(10))/log₂(a))
+    // But that doesn't improve the precision of log(m) because the fractional
+    // part remains identical...
+
+    fn log(self, base: Self) -> Self {
+        todo!()
+    }
+
+    fn log2(self) -> Self {
         todo!()
     }
 
     fn ln(self) -> Self {
-        if !self.is_normal() {
+        if !self.is_finite() {
             todo!("Special values are not yet handled correctly by this method!")
         }
         let number = Decimal::try_from(self.number()).unwrap().ln();
@@ -1104,16 +1341,8 @@ impl Float for SciDecimal {
         }
     }
 
-    fn log(self, base: Self) -> Self {
-        todo!()
-    }
-
-    fn log2(self) -> Self {
-        todo!()
-    }
-
     fn log10(self) -> Self {
-        if !self.is_normal() {
+        if !self.is_finite() {
             todo!("Special values are not yet handled correctly by this method!")
         }
         let number = Decimal::try_from(self.number()).unwrap().log10();
@@ -1129,12 +1358,18 @@ impl Float for SciDecimal {
         }
     }
 
+    /// Returns the maximum of the two numbers.
+    ///
+    /// If the two are equal, returns `self` (relevant for the uncertainty).
     fn max(self, other: Self) -> Self {
-        todo!()
+        if other > self { other } else { self }
     }
 
+    /// Returns the minimum of the two numbers.
+    ///
+    /// If the two are equal, returns `self` (relevant for the uncertainty).
     fn min(self, other: Self) -> Self {
-        todo!()
+        if other < self { other } else { self }
     }
 
     fn abs_sub(self, other: Self) -> Self {
@@ -1904,6 +2139,28 @@ impl FromStr for SciDecimal {
     type Err = SciNumError;
 
     /// Parses a string and attempts to create a corresponding `SciDecimal`.
+    ///
+    /// A correctly formed string will *always* return a `SciDecimal`:
+    ///
+    /// - Excess precision is rounded to 16 significant figures.
+    ///
+    /// - If the absolute magnitude of the number is too *large* to be represented,
+    ///   an infinity with the appropriate sign is returned.
+    ///
+    /// - If the absolute magnitude of the number is too *small* to be represented,
+    ///   a zero with the appropriate sign is returned.
+    ///
+    /// Fails if the string cannot be parsed at all.
+    ///
+    /// # Special values
+    ///
+    /// `inf` and `+inf` are parsed to positive infinity, `-inf` and `−inf` (with
+    /// a hyphen-minus or a proper minus sign) are parsed to negative infinity.
+    ///
+    /// Likewise, `0` and `+0` parsed to positive zero, `-0` and `−0` to negative.
+    ///
+    /// All variations of `NaN` are parsed case-insensitively to `NaN`, with any
+    /// sign ignored.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // TODO Support special values
         let re =
@@ -2008,7 +2265,7 @@ impl TryFrom<BigDecimal> for SciDecimal {
     /// Attempts to convert a `bigdecimal::BigDecimal` to a `SciDecimal`.
     ///
     /// Fails if the `BigDecimal` has a significand with more than 16 significant
-    /// figures or an exponent that cannot be represented by an `i8`.
+    /// figures or an exponent that cannot be represented by an `i16`.
     ///
     /// The conversion currently goes via the string representation.
     fn try_from(n: BigDecimal) -> Result<Self, SciNumError> {
@@ -2023,11 +2280,14 @@ impl TryFrom<SciDecimal> for BigDecimal {
     /// Attempts to convert a `SciDecimal` to a `bigdecimal::BigDecimal`, dropping
     /// any uncertainty.
     ///
-    /// Fails if the number is not normal.
+    /// Fails if the number is not finite.
+    ///
+    /// Negative zero becomes simply zero, since BigDecimal doesn't have signed
+    /// zeros.
     fn try_from(n: SciDecimal) -> Result<BigDecimal, bigdecimal::ParseBigDecimalError> {
-        if !n.is_normal() {
+        if !n.is_finite() {
             Err(bigdecimal::ParseBigDecimalError::Other(
-                "BigDecimal can only represent normal values, not −0, ∞, or NaN".to_string(),
+                "BigDecimal can only represent finite values, not ∞, or NaN".to_string(),
             ))
         } else {
             Ok(BigDecimal::from_bigint(
@@ -2090,6 +2350,10 @@ impl TryFrom<SciDecimal> for f64 {
     }
 }
 
+/// Other conversions, typically lossy and infallible (in contrast to the `From`
+/// implementations, which are lossless and infallible but as a result only
+/// implemented for a few conversions, and the `TryFrom` implementations, which
+/// must also be lossless, and must error on failure).
 impl SciDecimal {
     /// Converts a `SciDecimal` to an `f64`, dropping any uncertainty,
     /// rounding and saturating as appropriate.
@@ -2128,6 +2392,25 @@ impl SciDecimal {
             .to_string()
             .parse()
             .expect("All other possible values should fit into an f64")
+    }
+
+    /// Converts a `BigDecimal` to a `SciDecimal`, rounding and saturating as appropriate.
+    ///
+    /// Infallible – will *always* return a `SciDecimal` – but bear in mind the
+    /// following considerations:
+    ///
+    /// - Excess precision is **rounded** to 16 significant figures.
+    ///
+    /// - If the absolute magnitude of the number is too *large* to be represented,
+    ///   an **infinity** with the appropriate sign is returned.
+    ///
+    /// - If the absolute magnitude of the number is too *small* to be represented,
+    ///   a **zero** with the appropriate sign is returned.
+    ///
+    /// Currently goes via the string representation and `SciDecimal::from_str()`.
+    fn from_bigdecimal(n: BigDecimal) -> SciDecimal {
+        SciDecimal::from_str(&n.to_scientific_notation())
+            .expect("We can assume BigDecimal formats numbers correctly")
     }
 }
 
@@ -3390,6 +3673,17 @@ mod tests {
         assert!(SciDecimal::from_str("x.482").is_err());
         assert!(SciDecimal::from_str("52.x").is_err());
         assert!(SciDecimal::from_str("-2.42F-4").is_err());
+    }
+
+    #[test]
+    fn to_big_dec() {
+        // Check that BigDecimal can parse negative zero
+        assert_eq!(BigDecimal::from_str("-0").unwrap(), BigDecimal::zero());
+        // Doesn't parse proper minus signs though, unlike SciDecimal
+        assert!(BigDecimal::from_str("−0").is_err());
+        // Note though that BigDecimal doesn't actually *have* negative zero, it
+        // gets parsed to positive zero
+        assert_eq!(BigDecimal::from_str("-0").unwrap().to_string(), "0");
     }
 
     #[test]
