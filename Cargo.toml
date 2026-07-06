@@ -16,3 +16,6 @@ serde_with = "3.16.1"
 [dependencies.rust_decimal]
 version = "1.39.0"
 features = ["maths"]
+
+[dev-dependencies]
+itertools = "0.15"

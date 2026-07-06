@@ -2340,6 +2340,7 @@ impl_from_int!(u32);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use itertools::Itertools;
     use rust_decimal_macros::dec;
 
     #[test]
@@ -2911,6 +2912,31 @@ mod tests {
         );
     }
 
+    /// Returns an iterator over all combinations of `2.5e5`, `0`, `inf`, their
+    /// negative counterparts, and `NaN`.
+    fn combos() -> Vec<(SciDecimal, SciDecimal)> {
+        let vals = vec![
+            sci!(2.5e5),
+            sci!(-2.5e5),
+            SciDecimal::ZERO,
+            SciDecimal::NEG_ZERO,
+            SciDecimal::INFINITY,
+            SciDecimal::NEG_INFINITY,
+            SciDecimal::NAN,
+        ];
+        vals.iter()
+            .cloned()
+            .cartesian_product(vals.iter().cloned())
+            .collect()
+    }
+
+    #[test]
+    fn check_combos_cast_f64() {
+        for (val, _) in combos() {
+            assert_eq!(val.to_plain_string(), f64::cast_from(val).to_string());
+        }
+    }
+
     #[test]
     fn add_exact() {
         let n1 = SciDecimal::new(40, 0);
@@ -2992,6 +3018,15 @@ mod tests {
         assert_eq!( (nzero  + n     ),  n);
         assert_eq!( (p      + nzero ),  p);
         assert_eq!( (n      + nzero ),  n);
+    }
+
+    #[test]
+    fn add_validate_vs_f64() {
+        for (a, b) in combos() {
+            let result_sci = a + b;
+            let result_f64 = f64::cast_from(a) + f64::cast_from(b);
+            assert_eq!(result_sci.to_plain_string(), result_f64.to_string());
+        }
     }
 
     #[test]
