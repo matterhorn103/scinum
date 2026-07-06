@@ -1,10 +1,12 @@
-use num_traits::{Inv, Num, Zero};
+use num_traits::{Num, Zero};
 
-use crate::{RoundingMode, SciDecimal};
+use crate::RoundingMode;
 
 /// A trait for numeric types that have an associated uncertainty.
-pub trait SciNum: Num + Inv + TryFrom<SciDecimal> {
+pub trait SciNum: Num {
     /// The type that is returned by accessing the number or uncertainty.
+    ///
+    /// Need not be `Self`, but must always be fully compatible with `Self`.
     type Number: Num + Into<Self>;
 
     /// The type's representation of the value 0, in exact form.
@@ -19,27 +21,17 @@ pub trait SciNum: Num + Inv + TryFrom<SciDecimal> {
     /// Returns the absolute uncertainty as an exact number.
     ///
     /// The uncertainty is always positive.
-    ///
-    /// # Special values
-    ///
-    /// - ±0 → the actual uncertainty (0 ± 3 is perfectly valid, for example)
-    ///
-    /// - ±∞ → ∞
-    ///
-    /// - `NaN` → `NaN`
     fn uncertainty(&self) -> Self::Number;
 
     /// Returns the relative uncertainty as an exact number.
     ///
     /// The relative uncertainty is always positive.
-    fn relative_uncertainty(&self) -> Self::Number {
-        self.uncertainty() / self.number()
-    }
+    fn relative_uncertainty(&self) -> Self::Number;
 
     /// Creates a new number with the same value but the provided uncertainty.
     fn with_uncertainty(self, uncertainty: Self::Number) -> Self;
 
-    /// Returns true if the number has an uncertainty of zero.
+    /// Returns `true` if the number has an uncertainty of zero.
     fn is_exact(&self) -> bool {
         self.uncertainty().is_zero()
     }
