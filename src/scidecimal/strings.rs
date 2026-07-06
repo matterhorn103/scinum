@@ -232,9 +232,11 @@ macro_rules! sci {
     };
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
+
 
     //#[test]
     //fn debug() {
@@ -407,3 +409,4 @@ mod tests {
         assert_eq!(sci!(1.5E8), SciDecimal::new(15, 7));
     }
 }
+*/

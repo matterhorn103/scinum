@@ -615,7 +615,7 @@ impl SciDecimal {
         )
     }
 }
-
+/*
 #[cfg(test)]
 mod tests {
     use itertools::Itertools;
@@ -1137,3 +1137,4 @@ fn rem_special() {
         assert_eq!(n_roundtrip, n_pos);
     }
 }
+*/

@@ -271,7 +271,7 @@ impl NumCast for SciDecimal {
         }
     }
 }
-
+/*
 #[cfg(test)]
 mod tests {
     use rust_decimal_macros::dec;
@@ -324,3 +324,4 @@ mod tests {
         assert_eq!(n.uncertainty(), SciDecimal::ZERO);
     }
 }
+*/

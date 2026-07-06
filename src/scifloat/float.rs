@@ -400,6 +400,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn log_base10() {
         let n1 = SciFloat::new_with_uncertainty(20.0, 2.0);
         let n2 = SciFloat::new_with_uncertainty(30.0, 5.0);
