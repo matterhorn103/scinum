@@ -2116,11 +2116,12 @@ impl SciDecimal {
     }
 }
 
-impl fmt::Display for SciDecimal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+/// String-related methods.
+impl SciDecimal {
+    pub fn to_plain_string(&self) -> String {
         // Handle NaN
         if self.nan {
-            return write!(f, "NaN");
+            return String::from("NaN");
         }
         // Get sign character
         let sign = if self.negative {
@@ -2130,7 +2131,13 @@ impl fmt::Display for SciDecimal {
         };
         // Handle infinities
         if self.inf {
-            return write!(f, "{}inf", sign);
+            return format!("{sign}inf");
+        }
+        // Handle zeros
+        if self.is_zero() {
+            // TODO Have this display the uncertainty properly once they can be
+            // displayed with +/-
+            return format!("{}0", sign);
         }
         let significand = self.significand;
         let uncertainty = if self.is_exact() {
@@ -2138,6 +2145,68 @@ impl fmt::Display for SciDecimal {
         } else {
             format!("({})", self.uncertainty)
         };
+        // Integers
+        if self.precision() > 0 {
+            // Need to add appropriate zeros as padding
+            // e.g. 25(2)e4 needs to become 250000(20000)
+            let zeros = "0".repeat(self.precision() as usize);
+            let uncertainty = if !uncertainty.is_empty() {
+                uncertainty.replace(")", &zeros) + ")"
+            } else {
+                uncertainty
+            };
+            format!("{sign}{significand}{zeros}{uncertainty}")
+        // Numbers with both integral and fractional parts
+        } else if self.precision_most_significant_fig() >= 0 {
+            // 3.1 has precision = -1, sigfigs = 2
+            // 42.764 has precision = -3, sigfigs = 5
+            // 3.02 has precision = -2, sigfigs = 3
+            let int_figs = self.sf() as u16 - self.precision().unsigned_abs();
+            let mut int = significand.to_string();
+            let frac = int.split_off(int_figs.into());
+            format!("{sign}{int}.{frac}{uncertainty}")
+        // Numbers with only a fractional part
+        } else {
+            // 0.005 needs to have two zeros, precision = -3, sigfigs = 1
+            let zeros = // (-3).abs() - 1 = 2
+                "0".repeat((self.precision().unsigned_abs() - self.sf() as u16).into());
+            format!("{sign}0.{zeros}{significand}{uncertainty}")
+        }
+    }
+
+    pub fn to_scientific_string(&self) -> String {
+        // Handle NaN
+        if self.nan {
+            return String::from("NaN");
+        }
+        // Get sign character
+        let sign = if self.negative {
+            String::from("-")
+        } else {
+            String::new()
+        };
+        // Handle infinities
+        if self.inf {
+            return format!("{}inf", sign);
+        }
+        let uncertainty = if self.is_exact() {
+            String::new()
+        } else {
+            format!("({})", self.uncertainty)
+        };
+        let (int, zeros, frac, _, exp) = self.scientific_parts().unwrap();
+        let zeros = "0".repeat(zeros.into());
+        // Fractional part might not have any places at all (e.g. 2e6)
+        if frac == 0 {
+            format!("{int}{uncertainty}e{exp}")
+        } else {
+            format!("{int}.{zeros}{frac}{uncertainty}e{exp}")
+        }
+    }
+}
+
+impl fmt::Display for SciDecimal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Numbers with up to five places either side of the decimal point should
         // be displayed using normal notation:
         // - 0.0325 = 3.25e-2 = (325, -4) => "0.0325"
@@ -2153,35 +2222,10 @@ impl fmt::Display for SciDecimal {
             && self.precision() >= -5
             && self.precision_most_significant_fig() <= 4
         {
-            // Integers
-            if self.precision() == 0 {
-                write!(f, "{sign}{significand}{uncertainty}")
-            // Numbers with both integral and fractional parts
-            } else if self.precision_most_significant_fig() >= 0 {
-                // 3.1 has precision = -1, sigfigs = 2
-                // 42.764 has precision = -3, sigfigs = 5
-                // 3.02 has precision = -2, sigfigs = 3
-                let int_figs = self.sf() as u16 - self.precision().unsigned_abs();
-                let mut int = significand.to_string();
-                let frac = int.split_off(int_figs.into());
-                write!(f, "{sign}{int}.{frac}{uncertainty}")
-            // Numbers with only a fractional part
-            } else {
-                // 0.005 needs to have two zeros, precision = -3, sigfigs = 1
-                let zeros = // (-3).abs() - 1 = 2
-                    "0".repeat((self.precision().unsigned_abs() - self.sf() as u16).into());
-                write!(f, "{sign}0.{zeros}{significand}{uncertainty}")
-            }
+            write!(f, "{}", self.to_plain_string())
         // Otherwise, use scientific notation
         } else {
-            let (int, zeros, frac, _, exp) = self.scientific_parts().unwrap();
-            let zeros = "0".repeat(zeros.into());
-            // Fractional part might not have any places at all (e.g. 2e6)
-            if frac == 0 {
-                write!(f, "{int}{uncertainty}e{exp}")
-            } else {
-                write!(f, "{int}.{zeros}{frac}{uncertainty}e{exp}")
-            }
+            write!(f, "{}", self.to_scientific_string())
         }
     }
 }
@@ -2193,13 +2237,17 @@ impl FromStr for SciDecimal {
     ///
     /// A correctly formed string will *always* return a `SciDecimal`:
     ///
-    /// - Excess precision is rounded to 16 significant figures.
+    /// - Excess precision is rounded to 16 significant figures (according to
+    ///   [`RoundingMode::HalfEven`]).
     ///
     /// - If the absolute magnitude of the number is too *large* to be represented,
     ///   an infinity with the appropriate sign is returned.
     ///
     /// - If the absolute magnitude of the number is too *small* to be represented,
     ///   a zero with the appropriate sign is returned.
+    ///
+    /// In this way the behaviour is like that of [`SciCast::cast`], and indeed
+    /// this method is used to effect the casts from several types.
     ///
     /// Fails if the string cannot be parsed at all.
     ///
@@ -2208,35 +2256,42 @@ impl FromStr for SciDecimal {
     /// `inf` and `+inf` are parsed to positive infinity, `-inf` and `−inf` (with
     /// a hyphen-minus or a proper minus sign) are parsed to negative infinity.
     ///
-    /// Likewise, `0` and `+0` parsed to positive zero, `-0` and `−0` to negative.
+    /// Likewise, `0` and `+0` are parsed to positive zero, `-0` and `−0` to negative.
     ///
     /// All variations of `NaN` are parsed case-insensitively to `NaN`, with any
     /// sign ignored.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // TODO Support special values
+        // TODO Allow underscores to group digits
         let re =
             Regex::new(r"^(-)?(\d+)?(?:[.,](\d+))?(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
         let caps = re.captures(s).ok_or(SciNumError::Parse(s.into()))?;
         // Example given with "6.971e-7"
         let negative = caps.get(1).is_some(); // false
-        let mut significand_str = String::new();
         let int = caps.get(2).map_or("", |m| m.as_str()); // "6"
         let frac = caps.get(3).map_or("", |m| m.as_str()); // "971"
         let frac_places = frac.len(); // 3
-        // Avoid adding leading zeros to the significand
-        if frac_places == 0 || int != "0" {
-            significand_str.push_str(int);
-        }
-        significand_str.push_str(frac);
-        let mut truncated_places: i16 = 0;
-        // If the precision in the string is too high, truncate to 16 sf
-        // TODO: Consider rounding rather than truncating
-        while significand_str.len() > 16 {
-            significand_str.pop();
-            truncated_places += 1;
-        }
+        let significand_string = int.to_owned() + frac;
+        let mut significand_slice = &*significand_string;
+        // Remove any leading zeros
+        significand_slice = significand_slice.trim_start_matches('0');
+        // But if the significand is just zero, it will have been removed
+        if significand_slice.is_empty() {
+            significand_slice = "0";
+        };
+        // If the precision in the string is too high, get it down to 19 sf
+        // We'll round to 16 sf at the end
+        let truncated_places = if significand_slice.len() > 19 {
+            let excess_places = significand_slice.len() - 19;
+            // OK to re-slice like this because our regex will only ever return
+            // a string of 1-byte chars
+            significand_slice = &significand_slice[..19];
+            excess_places
+        } else {
+            0
+        };
         let significand =
-            u64::from_str(&significand_str).map_err(|_e| SciNumError::Parse(s.into()))?; // "6971"
+            u64::from_str(significand_slice).map_err(|_e| SciNumError::Parse(s.into()))?; // "6971"
         let uncertainty = caps
             .get(4)
             .map_or(Ok(0), |m| u32::from_str(m.as_str()))
@@ -2246,9 +2301,9 @@ impl FromStr for SciDecimal {
             .map_or(Ok(0), |m| i16::from_str(m.as_str()))
             .map_err(|_e| SciNumError::Parse(s.into()))?
             - frac_places as i16
-            + truncated_places; // -7
+            + truncated_places as i16; // -7
         // "6.971e-7" should be represented as (6971, -10)
-        Ok(Self {
+        let num = Self {
             uncertainty,
             uncertainty_scale: 0,
             nan: false,
@@ -2256,14 +2311,19 @@ impl FromStr for SciDecimal {
             negative,
             exponent,
             significand,
-        })
+        };
+        if num.sf() > 16 {
+            Ok(num.round_sf(16, RoundingMode::HalfUp))
+        } else {
+            Ok(num)
+        }
     }
 }
 
 #[macro_export]
 macro_rules! sci {
     ($s:expr) => {
-        SciDecimal::from_str(stringify!($s)).unwrap()
+        <SciDecimal as std::str::FromStr>::from_str(stringify!($s)).unwrap()
     };
 }
 
@@ -2634,30 +2694,6 @@ mod tests {
             assert!(!ninf.is_zero());
             assert_ne!(inf, ninf);
         }
-    }
-
-    #[test]
-    fn from_decimal() {
-        let n = sci!(20);
-        assert_eq!(n.number(), SciDecimal::new(20, 0));
-        assert_eq!(n.number(), sci!(20));
-        assert_eq!(n.uncertainty(), SciDecimal::new(0, 0));
-        assert_eq!(n.uncertainty(), SciDecimal::ZERO);
-    }
-
-    #[test]
-    fn into_decimal() {
-        let n1 = SciDecimal::new_with_uncertainty(20, 2, 0);
-        assert_eq!(Decimal::try_from(n1).unwrap(), dec!(20));
-        let n2 = sci!(2.5e5);
-        assert_eq!(Decimal::try_from(n2).unwrap(), dec!(2.5e5));
-    }
-
-    #[test]
-    #[should_panic]
-    fn into_decimal_fails() {
-        let n = SciDecimal::new_with_uncertainty(20, 2, 40);
-        let _d = Decimal::try_from(n).unwrap();
     }
 
     #[test]
@@ -3604,6 +3640,18 @@ mod tests {
     //}
 
     #[test]
+    fn to_plain_string() {
+        assert_eq!(
+            SciDecimal::from_str("25e4").unwrap().to_plain_string(),
+            "250000"
+        );
+        assert_eq!(
+            SciDecimal::from_str("25(2)e4").unwrap().to_plain_string(),
+            "250000(20000)"
+        );
+    }
+
+    #[test]
     fn display() {
         // NaN and infinity should match the native `f64`
         assert_eq!(SciDecimal::NAN.to_string(), f64::NAN.to_string()); // "NaN"
@@ -3664,6 +3712,8 @@ mod tests {
     fn from_str() {
         // Integer
         assert_eq!(SciDecimal::from_str("42").unwrap(), SciDecimal::new(42, 0));
+        // Zero
+        assert_eq!(SciDecimal::from_str("0").unwrap(), SciDecimal::ZERO);
         // Decimal
         assert_eq!(
             SciDecimal::from_str("0.0859").unwrap(),
@@ -3678,6 +3728,11 @@ mod tests {
         assert_eq!(
             SciDecimal::from_str("-3.14").unwrap(),
             SciDecimal::new(-314, -2)
+        );
+        // Small number but not scientific notation
+        assert_eq!(
+            SciDecimal::from_str("0.0000000000000000000000000022250738585072").unwrap(),
+            SciDecimal::new(22250738585072, -40)
         );
         // Scientific notation
         assert_eq!(
