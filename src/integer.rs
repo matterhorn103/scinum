@@ -3,6 +3,7 @@
 use num_integer::Integer;
 use num_traits::{PrimInt, Unsigned};
 
+#[allow(dead_code)] // TODO Review
 pub(crate) trait UnsignedInt: PrimInt + Integer + Unsigned {
     const ONE: Self;
     const FIVE: Self;
@@ -75,6 +76,7 @@ impl_unsigned_int!(u32);
 impl_unsigned_int!(u64);
 impl_unsigned_int!(u128);
 
+#[allow(dead_code)] // TODO Review
 pub(crate) enum CmpTieResult {
     Greater,
     Equal,
@@ -90,6 +92,7 @@ pub(crate) enum CmpTieResult {
 /// For `1.4750` and `digits = 50`, the result would be `Ordering::Equal`.
 ///
 /// Returns `Ordering::Less` if `digits` is equal to 0.
+#[allow(dead_code)] // TODO Review
 pub(crate) fn cmp_tie<T: UnsignedInt>(digits: T) -> CmpTieResult {
     if digits.is_zero() {
         return CmpTieResult::Zero;

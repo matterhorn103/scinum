@@ -3,7 +3,7 @@
 
 use std::str::FromStr;
 
-use scinum::{SciDecimal, SciNum};
+use scinum::SciDecimal;
 
 #[test]
 fn it_adds_decimals() {

@@ -7,6 +7,7 @@ use std::f64::consts::PI;
 
 use crate::{SciFloat, SciNum};
 
+#[allow(unused_variables)] // TODO Remove once all methods are implemented
 impl Float for SciFloat {
     #[inline]
     fn nan() -> Self {
@@ -208,7 +209,7 @@ impl Float for SciFloat {
         if self.is_exact() {
             Self::new(result)
         } else {
-            let uncertainty = (self.relative_uncertainty() / (10.0_f64).ln());
+            let uncertainty = self.relative_uncertainty() / (10.0_f64).ln();
             Self::new_with_uncertainty(result, uncertainty)
         }
     }

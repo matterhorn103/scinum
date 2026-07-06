@@ -66,6 +66,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(unused_variables)]
     fn add() {
         // f(a, b) = a + b
         let dfda = |a: f64, b: f64| 1_f64;
@@ -82,6 +83,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(unused_variables)]
     fn mul() {
         // f(a, b) = a * b
         let dfda = |a: f64, b: f64| b;

@@ -947,6 +947,7 @@ impl One for SciDecimal {
 }
 
 /// Additional constants.
+#[allow(dead_code)]
 impl SciDecimal {
     // TODO Add more of the constants that f64 has https://doc.rust-lang.org/std/f64/consts/index.html
 

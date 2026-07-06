@@ -601,6 +601,7 @@ impl SciDecimal {
     ///
     /// `correlation` must be 0 (uncorrelated), 1 (completely correlated) or a
     /// value between the two.
+    #[allow(unused_variables)]
     pub fn correlated_add(self, rhs: Self, correlation: Self) -> Self {
         if correlation < Self::ZERO || correlation > Self::ONE {
             panic!("Correlation must be between 0 and 1!")

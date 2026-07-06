@@ -147,6 +147,8 @@
 //!
 //! The operations of `SciDecimal` have also not yet been optimized for performance.
 
+#![allow(mixed_script_confusables)]
+
 mod error;
 mod integer;
 mod rounding;

@@ -9,6 +9,7 @@ use crate::{
     scicast::{SciCast, SciCastFrom},
 };
 
+#[allow(unused_variables)] // TODO Remove once all methods are implemented
 impl Float for SciDecimal {
     #[inline]
     fn nan() -> Self {

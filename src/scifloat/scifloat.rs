@@ -73,6 +73,7 @@ impl SciFloat {
     }
 }
 
+#[allow(unused_variables)] // TODO Remove once all methods are implemented
 impl SciNum for SciFloat {
     type Number = f64;
 
