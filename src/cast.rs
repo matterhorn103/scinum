@@ -265,8 +265,8 @@ impl SciCast<SciDecimal> for Decimal {
         let unrounded = SciDecimal {
             uncertainty: 0,
             uncertainty_scale: 0,
-            //uncertainty_nan: false,
-            //uncertainty_inf: false,
+            uncertainty_nan: false,
+            uncertainty_inf: false,
             nan: false,
             inf: false,
             negative,
