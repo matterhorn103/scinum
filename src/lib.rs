@@ -154,6 +154,7 @@ mod float;
 mod integer;
 mod rounding;
 mod scinum;
+mod uncertainties;
 
 pub use decimal::SciDecimal;
 pub use error::SciNumError;

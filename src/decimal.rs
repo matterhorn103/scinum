@@ -11,7 +11,10 @@ use num_traits::{Float, FromPrimitive, Inv, Num, One, Pow, Zero};
 use regex::Regex;
 use rust_decimal::{Decimal, MathematicalOps};
 
-use crate::{RoundingMode, SciFloat, SciNum, error::SciNumError, rounding::cmp_tie};
+use crate::{
+    RoundingMode, SciFloat, SciNum, error::SciNumError, rounding::cmp_tie,
+    uncertainties::uncertainty_fn_generator,
+};
 
 /// A decimal floating point number with an associated uncertainty.
 ///
@@ -1241,13 +1244,19 @@ impl Float for SciDecimal {
 
     /// Raises the number to an integer power.
     fn powi(self, n: i32) -> Self {
-        let result = if n <= i8::MAX.into() && n >= i8::MIN.into() {
+        let exact = if n <= i8::MAX.into() && n >= i8::MIN.into() {
             self.unbounded_powi(
                 n.try_into()
                     .expect("n has already been checked and should fit into even an i8"),
             )
         } else {
             self.unbounded_powf(n.into())
+        };
+        let result = if self.is_exact() {
+            exact
+        } else {
+            let uncertainty = (self.relative_uncertainty() * n.into()) * exact.abs();
+            exact.with_uncertainty(uncertainty)
         };
         if result.significand > Self::MAX_SIGNIFICAND {
             result.round_sf(16, RoundingMode::HalfUp)
@@ -1564,12 +1573,12 @@ impl PartialOrd for SciDecimal {
     }
 }
 
-/// Arithmetic operations that return results with potentially excess precision,
+/// Arithmetic operations that return exact results with potentially excess precision,
 /// useful for intermediate results to avoid rounding errors, but not to be
 /// returned to the end user.
 impl SciDecimal {
-    /// Calculates `self + rhs`, permitting values for the significand
-    /// greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
+    /// Calculates `self + rhs` without uncertainty, permitting values for the
+    /// significand greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
     fn unbounded_add(self, rhs: Self) -> Self {
         // TODO If significand would be too large for u64, just round it and
         // increase the exponent instead of panicking
@@ -1598,7 +1607,7 @@ impl SciDecimal {
             (false, false) => {}
         }
 
-        let exact = match self.exponent.cmp(&rhs.exponent) {
+        match self.exponent.cmp(&rhs.exponent) {
             // In the simplest case, the exponents are the same
             Ordering::Equal => {
                 let number = self.significand_signed() + rhs.significand_signed();
@@ -1618,18 +1627,11 @@ impl SciDecimal {
                 let number = scaled.significand_signed() + rhs.significand_signed();
                 Self::new(number, scaled.exponent)
             }
-        };
-        if self.is_exact() && rhs.is_exact() {
-            exact
-        } else {
-            let uncertainty =
-                ((self.uncertainty().pow(2.into())) + rhs.uncertainty().pow(2.into())).sqrt();
-            exact.with_uncertainty(uncertainty)
         }
     }
 
-    /// Calculates `self * rhs`, permitting values for the significand
-    /// greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
+    /// Calculates `self * rhs` without uncertainty, permitting values for the
+    /// significand greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
     fn unbounded_mul(self, rhs: Self) -> Self {
         // Handle NaN
         if self.nan | rhs.nan {
@@ -1700,7 +1702,7 @@ impl SciDecimal {
                 (s, e)
             }
         };
-        let exact = Self {
+        Self {
             uncertainty: 0,
             uncertainty_scale: 0,
             nan: false,
@@ -1708,19 +1710,11 @@ impl SciDecimal {
             negative,
             exponent,
             significand,
-        };
-        if self.is_exact() && rhs.is_exact() {
-            exact
-        } else {
-            let uncertainty =
-                (self.relative_uncertainty().powi(2) + rhs.relative_uncertainty().powi(2)).sqrt()
-                    * exact.abs();
-            exact.with_uncertainty(uncertainty)
         }
     }
 
-    /// Calculates `self / rhs`, permitting values for the significand
-    /// greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
+    /// Calculates `self / rhs` without uncertainty, permitting values for the
+    /// significand greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
     fn unbounded_div(self, rhs: Self) -> Self {
         // Handle NaN
         if self.nan | rhs.nan {
@@ -1800,7 +1794,7 @@ impl SciDecimal {
         }
         let significand = lhs.significand / rhs.significand;
         let exponent = lhs.exponent - rhs.exponent;
-        let exact = Self {
+        Self {
             uncertainty: 0,
             uncertainty_scale: 0,
             nan: false,
@@ -1808,40 +1802,26 @@ impl SciDecimal {
             negative,
             exponent,
             significand,
-        };
-        if self.is_exact() && rhs.is_exact() {
-            exact
-        } else {
-            let uncertainty =
-                (lhs.relative_uncertainty().powi(2) + rhs.relative_uncertainty().powi(2)).sqrt()
-                    * exact.abs();
-            exact.with_uncertainty(uncertainty)
         }
     }
 
-    /// Calculates `self.powi(rhs)`, permitting values for the significand
-    /// greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
+    /// Calculates `self.powi(rhs)` without uncertainty, permitting values for the
+    /// significand greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
     fn unbounded_powi(self, n: i32) -> Self {
         if !self.is_normal() {
             todo!("Special values are not yet handled correctly by this method!")
         }
-        let exact = if n.is_negative() {
+        if n.is_negative() {
             self.powi(n.abs()).inv()
         } else {
             let number = self.significand_signed().pow(n.try_into().unwrap());
             let exponent = self.exponent * i16::try_from(n).unwrap();
             Self::new(number, exponent)
-        };
-        if self.is_exact() {
-            exact
-        } else {
-            let uncertainty = (self.relative_uncertainty() * n.into()) * exact.abs();
-            exact.with_uncertainty(uncertainty)
         }
     }
 
-    /// Calculates `self.pow(rhs)`, permitting values for the significand
-    /// greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
+    /// Calculates `self.pow(rhs)` without uncertainty, permitting values for the
+    /// significand greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
     fn unbounded_powf(self, rhs: Self) -> Self {
         if !(self.is_normal() && rhs.is_normal()) {
             todo!("Special values are not yet handled correctly by this method!")
@@ -1867,7 +1847,14 @@ impl Add for SciDecimal {
     ///
     /// - `NaN`: if either number is `NaN`, returns `NaN`
     fn add(self, rhs: Self) -> Self {
-        let result = self.unbounded_add(rhs);
+        let exact = self.unbounded_add(rhs);
+        let result = if self.is_exact() && rhs.is_exact() {
+            exact
+        } else {
+            let uncertainty =
+                ((self.uncertainty().pow(2.into())) + rhs.uncertainty().pow(2.into())).sqrt();
+            exact.with_uncertainty(uncertainty)
+        };
         if result.significand > Self::MAX_SIGNIFICAND {
             result.round_sf(16, RoundingMode::HalfUp)
         } else {
@@ -1905,7 +1892,15 @@ impl Mul for SciDecimal {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self {
-        let result = self.unbounded_mul(rhs);
+        let exact = self.unbounded_mul(rhs);
+        let result = if self.is_exact() && rhs.is_exact() {
+            exact
+        } else {
+            let uncertainty =
+                (self.relative_uncertainty().powi(2) + rhs.relative_uncertainty().powi(2)).sqrt()
+                    * exact.abs();
+            exact.with_uncertainty(uncertainty)
+        };
         if result.significand > Self::MAX_SIGNIFICAND {
             result.round_sf(16, RoundingMode::HalfUp)
         } else {
@@ -1926,7 +1921,15 @@ impl Div for SciDecimal {
     type Output = Self;
 
     fn div(self, rhs: Self) -> Self {
-        let result = self.unbounded_div(rhs);
+        let exact = self.unbounded_div(rhs);
+        let result = if self.is_exact() && rhs.is_exact() {
+            exact
+        } else {
+            let uncertainty =
+                (self.relative_uncertainty().powi(2) + rhs.relative_uncertainty().powi(2)).sqrt()
+                    * exact.abs();
+            exact.with_uncertainty(uncertainty)
+        };
         if result.significand > Self::MAX_SIGNIFICAND {
             result.round_sf(16, RoundingMode::HalfUp)
         } else {
@@ -2062,6 +2065,54 @@ impl Inv for &SciDecimal {
     #[inline]
     fn inv(self) -> SciDecimal {
         SciDecimal::ONE / *self
+    }
+}
+
+/// Methods to get correlated uncertainties.
+impl SciDecimal {
+    /// Function that calculates a result and its uncertainty for any non-linear
+    /// differentiable function f(a, b).
+    ///
+    /// `f` is a function that gives the *exact* result of f(a, b), where a is `self`.
+    ///
+    /// `partderiv_a` and `partderiv_b` are the partial derivatives of f w.r.t. a and b.
+    ///
+    /// `ρ_ab` is the correlation between a and b, which should be 0 (uncorrelated),
+    /// 1 (completely correlated) or a value between the two.
+    fn calculate_with_uncertainty<F, A, B>(
+        self,
+        b: Self,
+        f: F,
+        partderiv_a: A,
+        partderiv_b: B,
+        ρ_ab: Self,
+    ) -> Self
+    where
+        F: Fn(Self, Self) -> Self,
+        A: Fn(Self, Self) -> Self,
+        B: Fn(Self, Self) -> Self,
+    {
+        let exact = f(self, b);
+        let uncertainty_fn = uncertainty_fn_generator(partderiv_a, partderiv_b);
+        let uncertainty = uncertainty_fn(self, b, self.uncertainty(), b.uncertainty(), ρ_ab);
+        exact.with_uncertainty(uncertainty)
+    }
+
+    /// Calculates the sum of two values with correlated uncertainties.
+    ///
+    /// `correlation` must be 0 (uncorrelated), 1 (completely correlated) or a
+    /// value between the two.
+    pub fn correlated_add(self, rhs: Self, correlation: Self) -> Self {
+        if correlation < Self::ZERO || correlation > Self::ONE {
+            panic!("Correlation must be between 0 and 1!")
+        }
+        self.calculate_with_uncertainty(
+            rhs,
+            Self::add,
+            |a, b| Self::ONE,
+            |a, b| Self::ONE,
+            correlation,
+        )
     }
 }
 
