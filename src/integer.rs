@@ -1,4 +1,4 @@
-// Functions for manipulation of integers
+//! Useful functions for the manipulation of integers, for internal use.
 
 use num_integer::Integer;
 use num_traits::{PrimInt, Unsigned};
@@ -58,13 +58,13 @@ pub(crate) trait UnsignedInt: PrimInt + Integer + Unsigned {
 macro_rules! impl_unsigned_int {
     ($T:ty) => {
         impl UnsignedInt for $T {
-                const ONE: $T = 1;
-                const FIVE: $T = 5;
-                const TEN: $T = 10;
+            const ONE: $T = 1;
+            const FIVE: $T = 5;
+            const TEN: $T = 10;
 
-                fn ilog10(self) -> u32 {
-                    self.ilog10()
-                }
+            fn ilog10(self) -> u32 {
+                self.ilog10()
+            }
         }
     };
 }
@@ -74,7 +74,6 @@ impl_unsigned_int!(u16);
 impl_unsigned_int!(u32);
 impl_unsigned_int!(u64);
 impl_unsigned_int!(u128);
-
 
 pub(crate) enum CmpTieResult {
     Greater,

@@ -147,17 +147,18 @@
 //!
 //! The operations of `SciDecimal` have also not yet been optimized for performance.
 
-mod cast;
-mod decimal;
 mod error;
-mod float;
 mod integer;
 mod rounding;
+mod scicast;
+mod scidecimal;
+mod scifloat;
 mod scinum;
 mod uncertainties;
 
-pub use decimal::SciDecimal;
 pub use error::SciNumError;
-pub use float::SciFloat;
 pub use rounding::RoundingMode;
+pub use scicast::{CheckedSciCast, CheckedSciCastFrom, SciCast, SciCastFrom};
+pub use scidecimal::scidecimal::SciDecimal;
+pub use scifloat::scifloat::SciFloat;
 pub use scinum::SciNum;

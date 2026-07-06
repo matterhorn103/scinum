@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 
 use num_traits::Zero;
 
+/// The strategy to use for rounding operations.
 #[derive(Debug, Clone, Copy)]
 pub enum RoundingMode {
     /// Traditional "rounding up" – to the nearest, with ties going away from zero.

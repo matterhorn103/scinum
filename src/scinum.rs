@@ -196,7 +196,7 @@ pub trait SciNum: Num {
     ///
     /// # Panics
     ///
-    /// This function will panic if the `SciNum` already has fewer significant figures
+    /// This function may panic if the `SciNum` already has fewer significant figures
     /// than the requested number.
     fn trunc_sf(self, sf: u8) -> Self;
 }
