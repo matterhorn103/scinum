@@ -1,18 +1,21 @@
 use std::{
     cmp::Ordering,
     fmt::{self, Debug},
-    num::{FpCategory, ParseFloatError},
+    num::FpCategory,
     ops::{Add, Div, Mul, Neg, Rem, Sub},
     str::FromStr,
 };
 
-use bigdecimal::{BigDecimal, num_bigint::BigInt};
-use num_traits::{Float, FromPrimitive, Inv, Num, One, Pow, Zero};
+use bigdecimal::BigDecimal;
+use num_traits::{Float, Inv, Num, One, Pow, Zero};
 use regex::Regex;
 use rust_decimal::{Decimal, MathematicalOps};
 
 use crate::{
-    RoundingMode, SciFloat, SciNum, error::SciNumError, rounding::cmp_tie,
+    RoundingMode, SciNum,
+    cast::{SciCast, SciCastFrom},
+    error::SciNumError,
+    rounding::cmp_tie,
     uncertainties::uncertainty_fn_generator,
 };
 
@@ -33,13 +36,15 @@ use crate::{
 /// enabling typical scientific calculations.
 #[derive(Copy, Clone, Debug, serde_with::DeserializeFromStr, serde_with::SerializeDisplay)]
 pub struct SciDecimal {
-    uncertainty: u32,
-    uncertainty_scale: i8, // This allows the uncertainty to have a different precision
-    nan: bool,
-    inf: bool,
-    negative: bool,
-    exponent: i16,
-    significand: u64,
+    pub(crate) uncertainty: u32,
+    pub(crate) uncertainty_scale: i8, // This allows the uncertainty to have a different precision
+    pub(crate) uncertainty_nan: bool,
+    pub(crate) uncertainty_inf: bool,
+    pub(crate) nan: bool,
+    pub(crate) inf: bool,
+    pub(crate) negative: bool,
+    pub(crate) exponent: i16,
+    pub(crate) significand: u64,
 }
 
 /// Constants that don't belong to specific trait implementations.
@@ -62,6 +67,8 @@ impl SciDecimal {
     pub const MIN: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -73,6 +80,8 @@ impl SciDecimal {
     pub const MIN_POSITIVE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: false,
@@ -84,6 +93,8 @@ impl SciDecimal {
     pub const MAX: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: false,
@@ -95,6 +106,8 @@ impl SciDecimal {
     pub const NAN: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: true,
         inf: false,
         negative: false,
@@ -106,6 +119,8 @@ impl SciDecimal {
     pub const INFINITY: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: true,
         negative: false,
@@ -117,6 +132,8 @@ impl SciDecimal {
     pub const NEG_INFINITY: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: true,
         negative: true,
@@ -128,6 +145,8 @@ impl SciDecimal {
     pub const NEG_ZERO: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -186,6 +205,8 @@ impl SciDecimal {
         Self {
             uncertainty: 0,
             uncertainty_scale: 0,
+            uncertainty_nan: false,
+            uncertainty_inf: false,
             nan: false,
             inf: false,
             negative: number.is_negative(),
@@ -220,6 +241,8 @@ impl SciDecimal {
         Self {
             uncertainty,
             uncertainty_scale: 0,
+            uncertainty_nan: false,
+            uncertainty_inf: false,
             nan: false,
             inf: false,
             negative: number.is_negative(),
@@ -294,6 +317,8 @@ impl SciDecimal {
         Self {
             uncertainty,
             uncertainty_scale: 0,
+            uncertainty_nan: false,
+            uncertainty_inf: false,
             nan: false,
             inf: false,
             negative: integer.is_negative(),
@@ -550,6 +575,8 @@ impl SciDecimal {
     pub const TWO: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: false,
@@ -560,6 +587,8 @@ impl SciDecimal {
     pub const NEG_ONE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -571,6 +600,8 @@ impl SciDecimal {
     pub const PI: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -582,6 +613,8 @@ impl SciDecimal {
     const PI_PRECISE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -593,6 +626,8 @@ impl SciDecimal {
     pub const E: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -604,6 +639,8 @@ impl SciDecimal {
     const E_PRECISE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -615,6 +652,8 @@ impl SciDecimal {
     pub const LN_2: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -626,6 +665,8 @@ impl SciDecimal {
     const LN_2_PRECISE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -637,6 +678,8 @@ impl SciDecimal {
     pub const LN_10: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -648,6 +691,8 @@ impl SciDecimal {
     const LN_10_PRECISE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -659,6 +704,8 @@ impl SciDecimal {
     pub const LOG2_E: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -670,6 +717,8 @@ impl SciDecimal {
     const LOG2_E_PRECISE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -681,6 +730,8 @@ impl SciDecimal {
     pub const LOG2_10: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -692,6 +743,8 @@ impl SciDecimal {
     const LOG2_10_PRECISE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -703,6 +756,8 @@ impl SciDecimal {
     pub const LOG10_2: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -714,6 +769,8 @@ impl SciDecimal {
     const LOG10_2_PRECISE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -725,6 +782,8 @@ impl SciDecimal {
     pub const LOG10_E: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -736,6 +795,8 @@ impl SciDecimal {
     const LOG10_E_PRECISE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: true,
@@ -750,6 +811,8 @@ impl SciNum for SciDecimal {
     const ZERO: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: false,
@@ -760,6 +823,8 @@ impl SciNum for SciDecimal {
     const ONE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
+        uncertainty_nan: false,
+        uncertainty_inf: false,
         nan: false,
         inf: false,
         negative: false,
@@ -772,20 +837,40 @@ impl SciNum for SciDecimal {
         Self {
             uncertainty: 0,
             uncertainty_scale: 0,
+            uncertainty_nan: false,
+            uncertainty_inf: false,
             ..*self
         }
     }
 
+    /// Returns the absolute uncertainty as an exact `SciDecimal`.
+    ///
+    /// The uncertainty is always positive.
+    ///
+    /// # Special values
+    ///
+    /// - ±0 → the actual uncertainty (0 ± 3 is perfectly valid, for example)
+    ///
+    /// - ±∞ → ∞
+    ///
+    /// - `NaN` → `NaN`
     #[inline]
     fn uncertainty(&self) -> Self {
         if self.nan {
             Self::NAN
         } else if self.inf {
+            // TODO Should the uncertainty of ∞ be ∞ or NaN?
+            Self::INFINITY
+        } else if self.uncertainty_nan {
+            Self::NAN
+        } else if self.uncertainty_inf {
             Self::INFINITY
         } else {
             Self {
                 uncertainty: 0,
                 uncertainty_scale: 0,
+                uncertainty_nan: false,
+                uncertainty_inf: false,
                 nan: false,
                 inf: false,
                 negative: false,
@@ -798,6 +883,14 @@ impl SciNum for SciDecimal {
     /// Returns the relative uncertainty as an exact `SciDecimal`.
     ///
     /// The relative uncertainty is always positive.
+    ///
+    /// # Special values
+    ///
+    /// - ±0 → ∞
+    ///
+    /// - ±∞ → `NaN`
+    ///
+    /// - `NaN` → `NaN`
     #[inline]
     fn relative_uncertainty(&self) -> Self {
         self.uncertainty() / self.number().abs()
@@ -819,34 +912,48 @@ impl SciNum for SciDecimal {
     /// assert_eq!(n, SciDecimal::new_with_uncertainty(251, 3, -3));
     #[inline]
     fn with_uncertainty(mut self, uncertainty: Self) -> Self {
-        if !uncertainty.is_finite() {
-            todo!("Special values are not yet handled correctly by this method!")
-        }
-        let narrowed_uncertainty = if uncertainty.significand > u32::MAX.into() {
-            uncertainty.trunc_sf(9);
-            uncertainty
+        if uncertainty.is_nan() {
+            self.uncertainty_nan = true;
+        } else if uncertainty.is_infinite() {
+            self.uncertainty_inf = true;
         } else {
-            uncertainty
-        };
-        self.uncertainty_scale = (narrowed_uncertainty.exponent - self.exponent)
-            .try_into()
-            .expect(
-                "Difference in precision of number and uncertainty should never be this large!",
-            );
-        self.uncertainty = narrowed_uncertainty
-            .significand
-            .try_into()
-            .expect("Already made sure that this is not greater than `u32::MAX`");
+            let narrowed_uncertainty = if uncertainty.significand > u32::MAX.into() {
+                uncertainty.trunc_sf(9);
+                uncertainty
+            } else {
+                uncertainty
+            };
+            self.uncertainty_scale = (narrowed_uncertainty.exponent - self.exponent)
+                .try_into()
+                .expect(
+                    "Difference in precision of number and uncertainty should never be this large!",
+                );
+            self.uncertainty = narrowed_uncertainty
+                .significand
+                .try_into()
+                .expect("Already made sure that this is not greater than `u32::MAX`");
+        }
         self
     }
 
-    /// Returns true if the `SciDecimal` has an uncertainty of zero.
+    /// Returns `true` if the `SciDecimal` has an uncertainty of zero.
+    ///
+    /// # Special values
+    ///
+    /// - ±0 → `true` or `false` according to the actual uncertainty
+    ///
+    /// - ±∞ → `false`
+    ///
+    /// - `NaN` → `false`
     #[inline]
     fn is_exact(&self) -> bool {
-        if !self.is_finite() {
-            todo!("Special values are not yet handled correctly by this method!")
+        // We could just do self.uncertainty().is_zero() but faster if we avoid
+        // creating a new SciDecimal
+        if self.nan | self.inf {
+            false
+        } else {
+            self.uncertainty == 0
         }
-        self.uncertainty == 0
     }
 
     /// Returns the scale of the least significant place.
@@ -909,7 +1016,7 @@ impl SciNum for SciDecimal {
 
     #[inline]
     fn sf(&self) -> u8 {
-        if !self.is_normal() {
+        if !self.is_finite() {
             todo!("Special values are not yet handled correctly by this method!")
         }
         if let Some(log) = self.significand.checked_ilog10() {
@@ -1095,7 +1202,7 @@ impl Num for SciDecimal {
         // For now, just make use of the BigDecimal implementation
         let dec = BigDecimal::from_str_radix(str, radix)
             .or(Err(SciNumError::Parse(format!("Couldn't parse {}", str))))?;
-        Self::try_from(dec)
+        Ok(dec.cast())
     }
 }
 
@@ -1254,6 +1361,9 @@ impl Float for SciDecimal {
         };
         let result = if self.is_exact() {
             exact
+        } else if !exact.is_finite() {
+            // Uncertainty is infinity or NaN by definition anyway
+            exact
         } else {
             let uncertainty = (self.relative_uncertainty() * n.into()) * exact.abs();
             exact.with_uncertainty(uncertainty)
@@ -1337,16 +1447,12 @@ impl Float for SciDecimal {
         if !self.is_finite() {
             todo!("Special values are not yet handled correctly by this method!")
         }
-        let number = Decimal::try_from(self.number()).unwrap().ln();
+        let number = Decimal::cast_from(self.number()).ln();
         if self.is_exact() {
-            Self::try_from(number).unwrap()
+            number.cast()
         } else {
-            let uncertainty = Decimal::try_from(self.relative_uncertainty())
-                .unwrap()
-                .abs();
-            Self::try_from(number)
-                .unwrap()
-                .with_uncertainty(uncertainty.try_into().unwrap())
+            let uncertainty = self.relative_uncertainty().abs();
+            number.cast().with_uncertainty(uncertainty)
         }
     }
 
@@ -1354,16 +1460,14 @@ impl Float for SciDecimal {
         if !self.is_finite() {
             todo!("Special values are not yet handled correctly by this method!")
         }
-        let number = Decimal::try_from(self.number()).unwrap().log10();
+        let number = Decimal::cast_from(self.number()).log10();
         if self.is_exact() {
-            Self::try_from(number).unwrap()
+            number.cast()
         } else {
-            let uncertainty = (Decimal::try_from(self.uncertainty()).unwrap()
-                / (Decimal::TEN.ln() * Decimal::try_from(self.number()).unwrap()))
+            let uncertainty = (Decimal::cast_from(self.uncertainty())
+                / (Decimal::TEN.ln() * Decimal::cast_from(self.number())))
             .abs();
-            Self::try_from(number)
-                .unwrap()
-                .with_uncertainty(uncertainty.try_into().unwrap())
+            number.cast().with_uncertainty(uncertainty.cast())
         }
     }
 
@@ -1466,17 +1570,22 @@ impl PartialEq for SciDecimal {
         // +0 == +0, but also +0 == -0
         } else if self.is_zero() && other.is_zero() {
             true
+        } else if self.is_zero() || other.is_zero() {
+            false
         // Can't be equal if sign is different, so short circuit if so
         } else if self.negative != other.negative {
             false
         // ∞ == ∞, -∞ == -∞, +∞ != -∞ but we already checked the signs are the same
         } else if self.inf & other.inf {
             true
+        } else if self.inf | other.inf {
+            false
         } else if self.exponent == other.exponent {
             self.significand == other.significand
         // Might be the same value but to different precision
         } else if self.significand.is_multiple_of(other.significand) {
             let factor = self.significand / other.significand;
+            // 0 counts as a multiple of 10
             if factor.is_multiple_of(10) {
                 let order_diff = factor.ilog10();
                 self.exponent + order_diff as i16 == other.exponent
@@ -1505,9 +1614,22 @@ impl PartialOrd for SciDecimal {
         if self.nan | other.nan {
             return None;
         }
-        // Zeros are equal regardless of sign
-        if self.is_zero() && other.is_zero() {
-            return Some(Ordering::Equal);
+        if self.is_zero() {
+            if other.is_zero() {
+                // Zeros are equal regardless of sign
+                return Some(Ordering::Equal);
+            } else if other.negative {
+                return Some(Ordering::Greater);
+            } else {
+                return Some(Ordering::Less);
+            }
+        } else if other.is_zero() {
+            // Checked for both being zero already
+            if self.negative {
+                return Some(Ordering::Less);
+            } else {
+                return Some(Ordering::Greater);
+            }
         }
         // Different signs are easily ordered
         if self.negative != other.negative {
@@ -1605,6 +1727,12 @@ impl SciDecimal {
                 return rhs;
             }
             (false, false) => {}
+        }
+        // Handle zero
+        if self.is_zero() {
+            return rhs.number();
+        } else if rhs.is_zero() {
+            return self.number();
         }
 
         match self.exponent.cmp(&rhs.exponent) {
@@ -1705,6 +1833,8 @@ impl SciDecimal {
         Self {
             uncertainty: 0,
             uncertainty_scale: 0,
+            uncertainty_inf: false,
+            uncertainty_nan: false,
             nan: false,
             inf: false,
             negative,
@@ -1715,6 +1845,26 @@ impl SciDecimal {
 
     /// Calculates `self / rhs` without uncertainty, permitting values for the
     /// significand greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
+    ///
+    /// # Special values
+    ///
+    /// Here, n is any finite, non-zero number.
+    ///
+    /// - ±0/±0 → `NaN`
+    ///
+    /// - ±n/±0 → ±∞
+    ///
+    /// - ±0/±∞ → ±0
+    ///
+    /// - ±n/±∞ → ±0
+    ///
+    /// - ±∞/±∞ → `NaN`
+    ///
+    /// - ±∞/±0 → ±∞
+    ///
+    /// - ±∞/±n → ±∞
+    ///
+    /// - Either `self` or `rhs` is `NaN` → `NaN`
     fn unbounded_div(self, rhs: Self) -> Self {
         // Handle NaN
         if self.nan | rhs.nan {
@@ -1797,6 +1947,8 @@ impl SciDecimal {
         Self {
             uncertainty: 0,
             uncertainty_scale: 0,
+            uncertainty_inf: false,
+            uncertainty_nan: false,
             nan: false,
             inf: false,
             negative,
@@ -1850,6 +2002,9 @@ impl Add for SciDecimal {
         let exact = self.unbounded_add(rhs);
         let result = if self.is_exact() && rhs.is_exact() {
             exact
+        } else if !exact.is_finite() {
+            // Uncertainty is infinity or NaN by definition anyway
+            exact
         } else {
             let uncertainty =
                 ((self.uncertainty().pow(2.into())) + rhs.uncertainty().pow(2.into())).sqrt();
@@ -1895,6 +2050,9 @@ impl Mul for SciDecimal {
         let exact = self.unbounded_mul(rhs);
         let result = if self.is_exact() && rhs.is_exact() {
             exact
+        } else if !exact.is_finite() {
+            // Uncertainty is infinity or NaN by definition anyway
+            exact
         } else {
             let uncertainty =
                 (self.relative_uncertainty().powi(2) + rhs.relative_uncertainty().powi(2)).sqrt()
@@ -1923,6 +2081,14 @@ impl Div for SciDecimal {
     fn div(self, rhs: Self) -> Self {
         let exact = self.unbounded_div(rhs);
         let result = if self.is_exact() && rhs.is_exact() {
+            exact
+        } else if !exact.is_finite() {
+            // Uncertainty is infinity or NaN by definition anyway
+            exact
+        } else if rhs.is_infinite() {
+            // Special case where result is zero due to division by infinity
+            // Uncertainty must also be exactly zero, but calculation by normal
+            // method fails because the relative uncertainty of `rhs` is `NaN`
             exact
         } else {
             let uncertainty =
@@ -1973,11 +2139,10 @@ impl Rem for SciDecimal {
         // TODO implement natively, not via Decimal
         dbg!(&self);
         dbg!(self.to_string());
-        let number =
-            Decimal::try_from(self.number()).unwrap() % Decimal::try_from(rhs.number()).unwrap();
+        let number = Decimal::cast_from(self.number()) % Decimal::cast_from(rhs.number());
         // Don't calculate uncertainty as the remainder function is discontinuous,
         // making it tricky
-        number.try_into().unwrap()
+        number.cast()
     }
 }
 
@@ -1998,7 +2163,7 @@ impl Pow<Self> for SciDecimal {
 
     /// Raise the `SciDecimal` to a `SciDecimal` power.
     fn pow(self, rhs: Self) -> Self {
-        let result = if rhs.is_exact()
+        let exact = if rhs.is_exact()
             && rhs.exponent.is_zero()
             && (rhs.exponent <= i8::MAX.into() && rhs.exponent >= i8::MIN.into())
         {
@@ -2009,6 +2174,18 @@ impl Pow<Self> for SciDecimal {
             )
         } else {
             self.unbounded_powf(rhs)
+        };
+        let result = if self.is_exact() && rhs.is_exact() {
+            exact
+        } else if !exact.is_finite() {
+            // Uncertainty is infinity or NaN by definition anyway
+            exact
+        } else {
+            // for c = a^b,
+            //      σ_c = |c| sqrt( ((b/a)σ_a)^2 + (ln(a)⋅σ_b)^2 + 2⋅b⋅ln(a)⋅σ_ab/a )
+            // if σ_ab = 0,
+            //      σ_c = |c| sqrt( ((b/a)σ_a)^2 + (ln(a)⋅σ_b)^2 )
+            todo!();
         };
         if result.significand > Self::MAX_SIGNIFICAND {
             result.round_sf(16, RoundingMode::HalfUp)
@@ -2116,11 +2293,12 @@ impl SciDecimal {
     }
 }
 
-impl fmt::Display for SciDecimal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+/// String-related methods.
+impl SciDecimal {
+    pub fn to_plain_string(&self) -> String {
         // Handle NaN
         if self.nan {
-            return write!(f, "NaN");
+            return String::from("NaN");
         }
         // Get sign character
         let sign = if self.negative {
@@ -2130,7 +2308,13 @@ impl fmt::Display for SciDecimal {
         };
         // Handle infinities
         if self.inf {
-            return write!(f, "{}inf", sign);
+            return format!("{sign}inf");
+        }
+        // Handle zeros
+        if self.is_zero() {
+            // TODO Have this display the uncertainty properly once they can be
+            // displayed with +/-
+            return format!("{}0", sign);
         }
         let significand = self.significand;
         let uncertainty = if self.is_exact() {
@@ -2138,6 +2322,68 @@ impl fmt::Display for SciDecimal {
         } else {
             format!("({})", self.uncertainty)
         };
+        // Integers
+        if self.precision() > 0 {
+            // Need to add appropriate zeros as padding
+            // e.g. 25(2)e4 needs to become 250000(20000)
+            let zeros = "0".repeat(self.precision() as usize);
+            let uncertainty = if !uncertainty.is_empty() {
+                uncertainty.replace(")", &zeros) + ")"
+            } else {
+                uncertainty
+            };
+            format!("{sign}{significand}{zeros}{uncertainty}")
+        // Numbers with both integral and fractional parts
+        } else if self.precision_most_significant_fig() >= 0 {
+            // 3.1 has precision = -1, sigfigs = 2
+            // 42.764 has precision = -3, sigfigs = 5
+            // 3.02 has precision = -2, sigfigs = 3
+            let int_figs = self.sf() as u16 - self.precision().unsigned_abs();
+            let mut int = significand.to_string();
+            let frac = int.split_off(int_figs.into());
+            format!("{sign}{int}.{frac}{uncertainty}")
+        // Numbers with only a fractional part
+        } else {
+            // 0.005 needs to have two zeros, precision = -3, sigfigs = 1
+            let zeros = // (-3).abs() - 1 = 2
+                "0".repeat((self.precision().unsigned_abs() - self.sf() as u16).into());
+            format!("{sign}0.{zeros}{significand}{uncertainty}")
+        }
+    }
+
+    pub fn to_scientific_string(&self) -> String {
+        // Handle NaN
+        if self.nan {
+            return String::from("NaN");
+        }
+        // Get sign character
+        let sign = if self.negative {
+            String::from("-")
+        } else {
+            String::new()
+        };
+        // Handle infinities
+        if self.inf {
+            return format!("{}inf", sign);
+        }
+        let uncertainty = if self.is_exact() {
+            String::new()
+        } else {
+            format!("({})", self.uncertainty)
+        };
+        let (int, zeros, frac, _, exp) = self.scientific_parts().unwrap();
+        let zeros = "0".repeat(zeros.into());
+        // Fractional part might not have any places at all (e.g. 2e6)
+        if frac == 0 {
+            format!("{int}{uncertainty}e{exp}")
+        } else {
+            format!("{int}.{zeros}{frac}{uncertainty}e{exp}")
+        }
+    }
+}
+
+impl fmt::Display for SciDecimal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Numbers with up to five places either side of the decimal point should
         // be displayed using normal notation:
         // - 0.0325 = 3.25e-2 = (325, -4) => "0.0325"
@@ -2153,35 +2399,10 @@ impl fmt::Display for SciDecimal {
             && self.precision() >= -5
             && self.precision_most_significant_fig() <= 4
         {
-            // Integers
-            if self.precision() == 0 {
-                write!(f, "{sign}{significand}{uncertainty}")
-            // Numbers with both integral and fractional parts
-            } else if self.precision_most_significant_fig() >= 0 {
-                // 3.1 has precision = -1, sigfigs = 2
-                // 42.764 has precision = -3, sigfigs = 5
-                // 3.02 has precision = -2, sigfigs = 3
-                let int_figs = self.sf() as u16 - self.precision().unsigned_abs();
-                let mut int = significand.to_string();
-                let frac = int.split_off(int_figs.into());
-                write!(f, "{sign}{int}.{frac}{uncertainty}")
-            // Numbers with only a fractional part
-            } else {
-                // 0.005 needs to have two zeros, precision = -3, sigfigs = 1
-                let zeros = // (-3).abs() - 1 = 2
-                    "0".repeat((self.precision().unsigned_abs() - self.sf() as u16).into());
-                write!(f, "{sign}0.{zeros}{significand}{uncertainty}")
-            }
+            write!(f, "{}", self.to_plain_string())
         // Otherwise, use scientific notation
         } else {
-            let (int, zeros, frac, _, exp) = self.scientific_parts().unwrap();
-            let zeros = "0".repeat(zeros.into());
-            // Fractional part might not have any places at all (e.g. 2e6)
-            if frac == 0 {
-                write!(f, "{int}{uncertainty}e{exp}")
-            } else {
-                write!(f, "{int}.{zeros}{frac}{uncertainty}e{exp}")
-            }
+            write!(f, "{}", self.to_scientific_string())
         }
     }
 }
@@ -2193,13 +2414,17 @@ impl FromStr for SciDecimal {
     ///
     /// A correctly formed string will *always* return a `SciDecimal`:
     ///
-    /// - Excess precision is rounded to 16 significant figures.
+    /// - Excess precision is rounded to 16 significant figures (according to
+    ///   [`RoundingMode::HalfEven`]).
     ///
     /// - If the absolute magnitude of the number is too *large* to be represented,
     ///   an infinity with the appropriate sign is returned.
     ///
     /// - If the absolute magnitude of the number is too *small* to be represented,
     ///   a zero with the appropriate sign is returned.
+    ///
+    /// In this way the behaviour is like that of [`SciCast::cast`], and indeed
+    /// this method is used to effect the casts from several types.
     ///
     /// Fails if the string cannot be parsed at all.
     ///
@@ -2208,35 +2433,42 @@ impl FromStr for SciDecimal {
     /// `inf` and `+inf` are parsed to positive infinity, `-inf` and `−inf` (with
     /// a hyphen-minus or a proper minus sign) are parsed to negative infinity.
     ///
-    /// Likewise, `0` and `+0` parsed to positive zero, `-0` and `−0` to negative.
+    /// Likewise, `0` and `+0` are parsed to positive zero, `-0` and `−0` to negative.
     ///
     /// All variations of `NaN` are parsed case-insensitively to `NaN`, with any
     /// sign ignored.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // TODO Support special values
+        // TODO Allow underscores to group digits
         let re =
             Regex::new(r"^(-)?(\d+)?(?:[.,](\d+))?(?:\((\d+)\))?(?:[eE]([+-]?\d+))?$").unwrap();
         let caps = re.captures(s).ok_or(SciNumError::Parse(s.into()))?;
         // Example given with "6.971e-7"
         let negative = caps.get(1).is_some(); // false
-        let mut significand_str = String::new();
         let int = caps.get(2).map_or("", |m| m.as_str()); // "6"
         let frac = caps.get(3).map_or("", |m| m.as_str()); // "971"
         let frac_places = frac.len(); // 3
-        // Avoid adding leading zeros to the significand
-        if frac_places == 0 || int != "0" {
-            significand_str.push_str(int);
-        }
-        significand_str.push_str(frac);
-        let mut truncated_places: i16 = 0;
-        // If the precision in the string is too high, truncate to 16 sf
-        // TODO: Consider rounding rather than truncating
-        while significand_str.len() > 16 {
-            significand_str.pop();
-            truncated_places += 1;
-        }
+        let significand_string = int.to_owned() + frac;
+        let mut significand_slice = &*significand_string;
+        // Remove any leading zeros
+        significand_slice = significand_slice.trim_start_matches('0');
+        // But if the significand is just zero, it will have been removed
+        if significand_slice.is_empty() {
+            significand_slice = "0";
+        };
+        // If the precision in the string is too high, get it down to 19 sf
+        // We'll round to 16 sf at the end
+        let truncated_places = if significand_slice.len() > 19 {
+            let excess_places = significand_slice.len() - 19;
+            // OK to re-slice like this because our regex will only ever return
+            // a string of 1-byte chars
+            significand_slice = &significand_slice[..19];
+            excess_places
+        } else {
+            0
+        };
         let significand =
-            u64::from_str(&significand_str).map_err(|_e| SciNumError::Parse(s.into()))?; // "6971"
+            u64::from_str(significand_slice).map_err(|_e| SciNumError::Parse(s.into()))?; // "6971"
         let uncertainty = caps
             .get(4)
             .map_or(Ok(0), |m| u32::from_str(m.as_str()))
@@ -2246,223 +2478,32 @@ impl FromStr for SciDecimal {
             .map_or(Ok(0), |m| i16::from_str(m.as_str()))
             .map_err(|_e| SciNumError::Parse(s.into()))?
             - frac_places as i16
-            + truncated_places; // -7
+            + truncated_places as i16; // -7
         // "6.971e-7" should be represented as (6971, -10)
-        Ok(Self {
+        let num = Self {
             uncertainty,
             uncertainty_scale: 0,
+            uncertainty_inf: false,
+            uncertainty_nan: false,
             nan: false,
             inf: false,
             negative,
             exponent,
             significand,
-        })
+        };
+        if num.sf() > 16 {
+            Ok(num.round_sf(16, RoundingMode::HalfUp))
+        } else {
+            Ok(num)
+        }
     }
 }
 
 #[macro_export]
 macro_rules! sci {
     ($s:expr) => {
-        SciDecimal::from_str(stringify!($s)).unwrap()
+        <SciDecimal as std::str::FromStr>::from_str(stringify!($s)).unwrap()
     };
-}
-
-impl TryFrom<Decimal> for SciDecimal {
-    type Error = SciNumError;
-
-    /// Attempts to convert a `rust_decimal::Decimal` to a `SciDecimal`, dropping
-    /// any uncertainty.
-    ///
-    /// Fails if the `Decimal` has a significand with more than 16 significant figures.
-    fn try_from(n: Decimal) -> Result<SciDecimal, SciNumError> {
-        let n = if n.mantissa() < SciDecimal::MAX_SIGNIFICAND_SIGNED.into() {
-            n
-        } else {
-            return Err(SciNumError::Cast("Precision too high".to_string()));
-        };
-        // The significand should now fit into a `u64`
-        // `n.scale()` is max 28 anyway, should be max 18 at this point
-        Ok(Self::new(n.mantissa() as i64, -(n.scale() as i16)))
-    }
-}
-
-impl TryFrom<SciDecimal> for Decimal {
-    type Error = rust_decimal::Error;
-
-    /// Attempts to convert a `SciDecimal` into a `rust_decimal::Decimal`, dropping
-    /// any uncertainty.
-    ///
-    /// Fails if the number is not representable by `Decimal`, either because
-    /// the number is outside of the range 10<sup>−28</sup> to 10<sup>28</sup>,
-    /// or because it is not normal.
-    ///
-    /// Currently goes via the string representation using `Decimal::from_str_exact()`.
-    fn try_from(n: SciDecimal) -> Result<Decimal, rust_decimal::Error> {
-        let s = n.number().to_string();
-        dbg!(&s);
-        // Check if in scientific notation or not
-        if s.contains(|x: char| x.is_ascii_alphabetic()) {
-            Decimal::from_scientific(&s)
-        } else {
-            Decimal::from_str_exact(&s)
-        }
-    }
-}
-
-// TODO: tests
-impl TryFrom<BigDecimal> for SciDecimal {
-    type Error = SciNumError;
-
-    /// Attempts to convert a `bigdecimal::BigDecimal` to a `SciDecimal`.
-    ///
-    /// Fails if the `BigDecimal` has a significand with more than 16 significant
-    /// figures or an exponent that cannot be represented by an `i16`.
-    ///
-    /// The conversion currently goes via the string representation.
-    fn try_from(n: BigDecimal) -> Result<Self, SciNumError> {
-        n.to_scientific_notation().parse()
-    }
-}
-
-// TODO: tests
-impl TryFrom<SciDecimal> for BigDecimal {
-    type Error = bigdecimal::ParseBigDecimalError;
-
-    /// Attempts to convert a `SciDecimal` to a `bigdecimal::BigDecimal`, dropping
-    /// any uncertainty.
-    ///
-    /// Fails if the number is not finite.
-    ///
-    /// Negative zero becomes simply zero, since BigDecimal doesn't have signed
-    /// zeros.
-    fn try_from(n: SciDecimal) -> Result<BigDecimal, bigdecimal::ParseBigDecimalError> {
-        if !n.is_finite() {
-            Err(bigdecimal::ParseBigDecimalError::Other(
-                "BigDecimal can only represent finite values, not ∞, or NaN".to_string(),
-            ))
-        } else {
-            Ok(BigDecimal::from_bigint(
-                BigInt::from_i64(n.significand_signed())
-                    .expect("The significand of a SciDecimal easily fits into a BigDecimal"),
-                -(n.exponent) as i64,
-            ))
-        }
-    }
-}
-
-/// TODO: tests
-impl From<SciFloat> for SciDecimal {
-    fn from(n: SciFloat) -> Self {
-        Self::from(n.number()).with_uncertainty(n.uncertainty().into())
-    }
-}
-
-// TODO: tests
-impl From<f64> for SciDecimal {
-    /// Converts an `f64` to a `SciDecimal`.
-    ///
-    /// The conversion currently goes via the string representation.
-    fn from(n: f64) -> Self {
-        n.to_string()
-            .parse()
-            .expect("All possible f64 values are representable as a SciDecimal")
-    }
-}
-
-// TODO: tests
-impl TryFrom<SciDecimal> for f64 {
-    type Error = ParseFloatError;
-
-    /// Attempts to convert a `SciDecimal` to an `f64`, dropping any uncertainty.
-    ///
-    /// `n` is first rounded to 15 significant figures using `SciDecimal.round_sf()`,
-    /// which in some cases may give the result a slightly lower precision than
-    /// would theoretically be representable.
-    /// The rounding uses the `RoundingMode::HalfEven` strategy.
-    ///
-    /// If the absolute value of `n` is larger than `f64::MAX`, the appropriate
-    /// infinity will be returned.
-    /// If the absolute value of `n` is smaller than `f64::MIN_POSITIVE`, positive
-    /// zero will be returned.
-    ///
-    /// The conversion currently goes via the string representation.
-    fn try_from(n: SciDecimal) -> Result<f64, ParseFloatError> {
-        if n.nan {
-            Ok(f64::NAN)
-        } else if n.inf || n.abs() > SciDecimal::from(f64::MAX) {
-            if n.negative {
-                Ok(f64::NEG_INFINITY)
-            } else {
-                Ok(f64::INFINITY)
-            }
-        } else {
-            f64::from_str(&n.to_string())
-        }
-    }
-}
-
-/// Other conversions, typically lossy and infallible (in contrast to the `From`
-/// implementations, which are lossless and infallible but as a result only
-/// implemented for a few conversions, and the `TryFrom` implementations, which
-/// must also be lossless, and must error on failure).
-impl SciDecimal {
-    /// Converts a `SciDecimal` to an `f64`, dropping any uncertainty,
-    /// rounding and saturating as appropriate.
-    ///
-    /// `n` is first rounded to 15 significant figures using `SciDecimal.round_sf()`,
-    /// which in some cases may give the result a slightly lower precision than
-    /// would theoretically be representable.
-    /// The rounding uses the `RoundingMode::HalfEven` strategy.
-    ///
-    /// If the absolute value of `n` is larger than `f64::MAX`, the appropriate
-    /// infinity will be returned.
-    /// If the absolute value of `n` is smaller than `f64::MIN_POSITIVE`, positive
-    /// zero will be returned.
-    ///
-    /// The conversion currently goes via the string representation.
-    fn to_f64(n: SciDecimal) -> f64 {
-        if n.nan {
-            return f64::NAN;
-        } else if n.inf || n.abs() > SciDecimal::from(f64::MAX) {
-            if n.negative {
-                return f64::NEG_INFINITY;
-            } else {
-                return f64::INFINITY;
-            }
-        } else if n.abs() < SciDecimal::from(f64::MIN_POSITIVE) {
-            return 0.0;
-        }
-        // Otherwise, must be able to fit, if we just drop excess precision
-        // Don't waste time adding trailing zeros if we don't have to
-        let narrowed = if n.sf() > 15 {
-            n.round_sf(15, RoundingMode::HalfEven)
-        } else {
-            n
-        };
-        narrowed
-            .to_string()
-            .parse()
-            .expect("All other possible values should fit into an f64")
-    }
-
-    /// Converts a `BigDecimal` to a `SciDecimal`, rounding and saturating as appropriate.
-    ///
-    /// Infallible – will *always* return a `SciDecimal` – but bear in mind the
-    /// following considerations:
-    ///
-    /// - Excess precision is **rounded** to 16 significant figures.
-    ///
-    /// - If the absolute magnitude of the number is too *large* to be represented,
-    ///   an **infinity** with the appropriate sign is returned.
-    ///
-    /// - If the absolute magnitude of the number is too *small* to be represented,
-    ///   a **zero** with the appropriate sign is returned.
-    ///
-    /// Currently goes via the string representation and `SciDecimal::from_str()`.
-    fn from_bigdecimal(n: BigDecimal) -> SciDecimal {
-        SciDecimal::from_str(&n.to_scientific_notation())
-            .expect("We can assume BigDecimal formats numbers correctly")
-    }
 }
 
 macro_rules! impl_from_int {
@@ -2485,6 +2526,7 @@ impl_from_int!(u32);
 #[cfg(test)]
 mod tests {
     use super::*;
+    use itertools::Itertools;
     use rust_decimal_macros::dec;
 
     #[test]
@@ -2576,6 +2618,8 @@ mod tests {
             SciDecimal {
                 uncertainty: 3,
                 uncertainty_scale: 0,
+                uncertainty_nan: false,
+                uncertainty_inf: false,
                 nan: true,
                 inf: true,
                 negative: false,
@@ -2585,6 +2629,8 @@ mod tests {
             SciDecimal {
                 uncertainty: 3,
                 uncertainty_scale: -1,
+                uncertainty_nan: false,
+                uncertainty_inf: false,
                 nan: true,
                 inf: true,
                 negative: true,
@@ -2594,6 +2640,8 @@ mod tests {
             SciDecimal {
                 uncertainty: 373,
                 uncertainty_scale: 2,
+                uncertainty_nan: false,
+                uncertainty_inf: false,
                 nan: true,
                 inf: true,
                 negative: false,
@@ -2634,30 +2682,6 @@ mod tests {
             assert!(!ninf.is_zero());
             assert_ne!(inf, ninf);
         }
-    }
-
-    #[test]
-    fn from_decimal() {
-        let n = sci!(20);
-        assert_eq!(n.number(), SciDecimal::new(20, 0));
-        assert_eq!(n.number(), sci!(20));
-        assert_eq!(n.uncertainty(), SciDecimal::new(0, 0));
-        assert_eq!(n.uncertainty(), SciDecimal::ZERO);
-    }
-
-    #[test]
-    fn into_decimal() {
-        let n1 = SciDecimal::new_with_uncertainty(20, 2, 0);
-        assert_eq!(Decimal::try_from(n1).unwrap(), dec!(20));
-        let n2 = sci!(2.5e5);
-        assert_eq!(Decimal::try_from(n2).unwrap(), dec!(2.5e5));
-    }
-
-    #[test]
-    #[should_panic]
-    fn into_decimal_fails() {
-        let n = SciDecimal::new_with_uncertainty(20, 2, 40);
-        let _d = Decimal::try_from(n).unwrap();
     }
 
     #[test]
@@ -3080,6 +3104,31 @@ mod tests {
         );
     }
 
+    /// Returns an iterator over all combinations of `2.5e5`, `0`, `inf`, their
+    /// negative counterparts, and `NaN`.
+    fn combos() -> Vec<(SciDecimal, SciDecimal)> {
+        let vals = vec![
+            sci!(2.5e5),
+            sci!(-2.5e5),
+            SciDecimal::ZERO,
+            SciDecimal::NEG_ZERO,
+            SciDecimal::INFINITY,
+            SciDecimal::NEG_INFINITY,
+            SciDecimal::NAN,
+        ];
+        vals.iter()
+            .cloned()
+            .cartesian_product(vals.iter().cloned())
+            .collect()
+    }
+
+    #[test]
+    fn check_combos_cast_f64() {
+        for (val, _) in combos() {
+            assert_eq!(val.to_plain_string(), f64::cast_from(val).to_string());
+        }
+    }
+
     #[test]
     fn add_exact() {
         let n1 = SciDecimal::new(40, 0);
@@ -3164,6 +3213,15 @@ mod tests {
     }
 
     #[test]
+    fn add_validate_vs_f64() {
+        for (a, b) in combos() {
+            let result_sci = a + b;
+            let result_f64 = f64::cast_from(a) + f64::cast_from(b);
+            assert_eq!(result_sci.to_plain_string(), result_f64.to_string());
+        }
+    }
+
+    #[test]
     fn sub_exact() {
         let n1 = SciDecimal::new(20, 0);
         let n2 = SciDecimal::new(30, 0);
@@ -3177,7 +3235,7 @@ mod tests {
         let result = n1 - n2;
         assert_eq!(result, sci!(-10));
         assert_eq!(
-            Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
+            Decimal::cast_from(result.uncertainty()).round_dp(5),
             dec!(5.3851648071345).round_dp(5)
         );
     }
@@ -3271,7 +3329,7 @@ mod tests {
         let result = n1 * n2;
         assert_eq!(result.number(), sci!(600));
         assert_eq!(
-            Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
+            Decimal::cast_from(result.uncertainty()).round_dp(5),
             dec!(116.619037896906).round_dp(5)
         );
         let ft = sci!(0.3048);
@@ -3377,13 +3435,11 @@ mod tests {
         let n2 = SciDecimal::new_with_uncertainty(30, 5, 0);
         let result = n1 / n2;
         assert_eq!(
-            Decimal::try_from(result.uncertainty())
-                .unwrap()
-                .round_dp(10),
+            Decimal::cast_from(result.uncertainty()).round_dp(10),
             dec!(0.6666666667).round_dp(10)
         );
         assert_eq!(
-            Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
+            Decimal::cast_from(result.uncertainty()).round_dp(5),
             dec!(0.129576708774340).round_dp(5)
         );
     }
@@ -3395,7 +3451,7 @@ mod tests {
         let result = n2 / n1;
         assert_eq!(result, sci!(1.5));
         assert_eq!(
-            Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
+            Decimal::cast_from(result.uncertainty()).round_dp(5),
             dec!(0.2915475947422).round_dp(5)
         );
     }
@@ -3433,8 +3489,8 @@ mod tests {
         assert_eq!( (inf    / n     ),  ninf);
         assert_eq!( (inf    / zero  ),  inf);
         assert_eq!( (inf    / nzero ),  ninf);
-        assert_eq!( (p      / inf   ),  inf);
-        assert_eq!( (n      / inf   ),  ninf);
+        assert_eq!( (p      / inf   ),  zero);
+        assert_eq!( (n      / inf   ),  nzero);
         assert_eq!( (zero   / inf   ),  zero);
         assert_eq!( (nzero  / inf   ),  nzero);
         assert_eq!( (ninf   / p     ),  ninf);
@@ -3568,7 +3624,7 @@ mod tests {
         let ratio = n1 / n2;
         let result = ratio.ln();
         assert_eq!(
-            Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
+            Decimal::cast_from(result.uncertainty()).round_dp(5),
             dec!(0.194365063161).round_dp(5)
         );
     }
@@ -3580,7 +3636,7 @@ mod tests {
         let ratio = n1 / n2;
         let result = ratio.log10();
         assert_eq!(
-            Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
+            Decimal::cast_from(result.uncertainty()).round_dp(5),
             dec!(0.08441167440582).round_dp(5)
         );
     }
@@ -3592,7 +3648,7 @@ mod tests {
         let ratio = n1 / n2;
         let result = ratio.exp();
         assert_eq!(
-            Decimal::try_from(result.uncertainty()).unwrap().round_dp(5),
+            Decimal::cast_from(result.uncertainty()).round_dp(5),
             dec!(0.25238096660761).round_dp(5)
         );
     }
@@ -3602,6 +3658,18 @@ mod tests {
     //    let n = SciDecimal::new_with_uncertainty(20, 2, 0);
     //    assert_eq!(format!("{n:?}"), "SciDecimal { number: 20, uncertainty: 2 }");
     //}
+
+    #[test]
+    fn to_plain_string() {
+        assert_eq!(
+            SciDecimal::from_str("25e4").unwrap().to_plain_string(),
+            "250000"
+        );
+        assert_eq!(
+            SciDecimal::from_str("25(2)e4").unwrap().to_plain_string(),
+            "250000(20000)"
+        );
+    }
 
     #[test]
     fn display() {
@@ -3664,6 +3732,8 @@ mod tests {
     fn from_str() {
         // Integer
         assert_eq!(SciDecimal::from_str("42").unwrap(), SciDecimal::new(42, 0));
+        // Zero
+        assert_eq!(SciDecimal::from_str("0").unwrap(), SciDecimal::ZERO);
         // Decimal
         assert_eq!(
             SciDecimal::from_str("0.0859").unwrap(),
@@ -3678,6 +3748,11 @@ mod tests {
         assert_eq!(
             SciDecimal::from_str("-3.14").unwrap(),
             SciDecimal::new(-314, -2)
+        );
+        // Small number but not scientific notation
+        assert_eq!(
+            SciDecimal::from_str("0.0000000000000000000000000022250738585072").unwrap(),
+            SciDecimal::new(22250738585072, -40)
         );
         // Scientific notation
         assert_eq!(
@@ -3724,17 +3799,6 @@ mod tests {
         assert!(SciDecimal::from_str("x.482").is_err());
         assert!(SciDecimal::from_str("52.x").is_err());
         assert!(SciDecimal::from_str("-2.42F-4").is_err());
-    }
-
-    #[test]
-    fn to_big_dec() {
-        // Check that BigDecimal can parse negative zero
-        assert_eq!(BigDecimal::from_str("-0").unwrap(), BigDecimal::zero());
-        // Doesn't parse proper minus signs though, unlike SciDecimal
-        assert!(BigDecimal::from_str("−0").is_err());
-        // Note though that BigDecimal doesn't actually *have* negative zero, it
-        // gets parsed to positive zero
-        assert_eq!(BigDecimal::from_str("-0").unwrap().to_string(), "0");
     }
 
     #[test]

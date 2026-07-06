@@ -832,19 +832,6 @@ impl From<f32> for SciFloat {
     }
 }
 
-/// TODO: tests
-impl TryFrom<SciDecimal> for SciFloat {
-    type Error = ParseFloatError;
-
-    /// Attempts to convert a `SciDecimal` to a `SciFloat`.
-    fn try_from(n: SciDecimal) -> Result<Self, ParseFloatError> {
-        Ok(Self {
-            number: n.number().try_into()?,
-            uncertainty: n.uncertainty().try_into()?,
-        })
-    }
-}
-
 macro_rules! impl_from_int {
     ($T:ty) => {
         impl From<$T> for SciFloat {
