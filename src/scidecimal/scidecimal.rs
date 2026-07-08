@@ -38,8 +38,6 @@ impl SciDecimal {
     ///
     /// `SciDecimal` supports up to 16 decimal digits, matching the precision of the
     /// IEEE 754 `decimal64` interchange format.
-    ///
-    /// This is slightly larger than the range of `f64` significands.
     pub const MAX_SIGNIFICAND: u64 = 10_u64.pow(16) - 1;
 
     /// The lowest supported signed significand.
@@ -155,13 +153,13 @@ impl SciDecimal {
 
 /// Associated constructor functions.
 impl SciDecimal {
-    /// Creates an exact `SciDecimal` from parts corresponding to _m_ ×
-    /// 10<sup><i>n</i></sup>.
+    /// Creates an exact `SciDecimal` _x_ = _m_ × 10<sup>_n_</sup>,
+    /// where _m_ = `number` and _n_ = `exponent`.
     ///
     /// # Panics
     ///
     /// This function panics if the number has more than 16 significant figures
-    /// (i.e. is larger than `MAX_SIGNIFICAND` = 2<sup>16</sup>)
+    /// (i.e. is larger than [`SciDecimal::MAX_SIGNIFICAND`] = 2<sup>16</sup> − 1).
     ///
     /// # Example
     ///
@@ -188,16 +186,17 @@ impl SciDecimal {
         }
     }
 
-    /// Creates a `SciDecimal` from parts corresponding to (_m_ ± _u_) ×
-    /// 10<sup><i>n</i></sup>.
+    /// Creates a `SciDecimal` _x_ = (_m_ ± _u_) × 10<sup>_n_</sup>,
+    /// where _m_ = `number`, _u_ = `uncertainty`, and _n_ = `exponent`.
     ///
     /// This means the number of decimal places in the number and uncertainty
-    /// will be the same in the created `SciDecimal`.
+    /// will be the same in the created `SciDecimal`, but not necessarily the
+    /// same number of significand figures.
     ///
     /// # Panics
     ///
     /// This function panics if the number has more than 16 significant figures
-    /// (i.e. is larger than `MAX_SIGNIFICAND` = 2<sup>16</sup>)
+    /// (i.e. is larger than [`SciDecimal::MAX_SIGNIFICAND`] = 2<sup>16</sup> − 1)
     ///
     /// # Example
     ///
@@ -224,69 +223,77 @@ impl SciDecimal {
         }
     }
 
-    /// Creates a `SciDecimal` from separate parts of a representation of the number in
-    /// scientific notation.
+    /// Creates a `SciDecimal`
+    /// _x_ = (_i_ + (_f_ × 10<sup>−_p_</sup>) ± (_u_ × 10<sup>−_p_</sup>)) × 10<sup>_n_</sup>,
+    /// where _i_ = `integer`, _f_ = `fraction`, _u_ = `uncertainty`, _p_ = `places`,
+    /// and _n_ = `exponent`.
     ///
-    /// The arguments should correspond to `(ii, z, fff, uu, nn)` when the number is
-    /// notated as `ii.{zeros}fff(uu) × 10^nn`, where `z` is the number of leading
-    /// zeros in the fractional part.
+    /// This corresponds to a written representation of the number in scientific
+    /// notation. For example, (1.048 ± 0.006) × 10<sup>6</sup>, also written as
+    /// 1.048(6) × 10<sup>6</sup>, would correspond to _i_ = 1, _f_ = 48, _u_ = 6,
+    ///  _p_ = 3, _n_ = 6; `places` (_p_) is thus the number of decimal places of the
+    /// number as written.
     ///
-    /// Trailing zeros in `fraction` are treated as significant, but leading zeros
-    /// are not. If `fraction` is simply `0`, it is then also treated as
-    /// insignificant. Passing `0` for both `zeros` and `fraction` therefore
-    /// creates a `SciDecimal` with a significand equal to `integer`.
-    ///
-    /// To create a number with only significant zeros in the fractional part (such
-    /// as `2.0`), pass `0` for `fraction` and specify the appropriate number of
-    /// zeros as `zeros`.
+    /// Note that this function does *not* panic if `fraction` has fewer digits than
+    /// `places`, the result will just be surprising, as the excess digits will
+    /// contribute to the integer part of the number.
     ///
     /// # Panics
     ///
     /// This function panics if the overall significand has more than 16 significant
-    /// figures.
+    /// figures i.e if
+    /// abs(_i_ + (_f_ × 10<sup>−_p_</sup>) > [`SciDecimal::MAX_SIGNIFICAND`].
     ///
     /// # Example
     ///
     /// ```
     /// # use scinum::SciDecimal;
     /// #
-    /// let n = SciDecimal::from_scientific_parts(2, 0, 51, 0, 0);
+    /// let n = SciDecimal::from_scientific_parts(2, 51, 0, 2, 0);
     /// assert_eq!(n.to_string(), "2.51");
-    /// let n = SciDecimal::from_scientific_parts(2, 1, 51, 0, 0);
+    /// let n = SciDecimal::from_scientific_parts(2, 51, 0, 3, 0);
     /// assert_eq!(n.to_string(), "2.051");
-    /// let n = SciDecimal::from_scientific_parts(2, 0, 51, 3, 0);
+    /// let n = SciDecimal::from_scientific_parts(2, 51, 0, 4, 0);
+    /// assert_eq!(n.to_string(), "2.0051");
+    /// // It may be clearer to a reader if all significant figures are written out
+    /// let n = SciDecimal::from_scientific_parts(2, 0051, 0, 4, 0);
+    /// assert_eq!(n.to_string(), "2.0051");
+    /// // The scientific representation need not be normalized (`integer` may be >= 10)
+    /// let n = SciDecimal::from_scientific_parts(20, 51, 0, 3, 0);
+    /// assert_eq!(n.to_string(), "20.051");
+    /// let n = SciDecimal::from_scientific_parts(2, 51, 3, 2, 0);
     /// assert_eq!(n.to_string(), "2.51(3)");
-    /// let n = SciDecimal::from_scientific_parts(2, 0, 51, 3, -1);
+    /// let n = SciDecimal::from_scientific_parts(2, 51, 3, 2, -1);
     /// assert_eq!(n.to_string(), "0.251(3)");
-    /// let n = SciDecimal::from_scientific_parts(2, 2, 0, 3, -2);
+    /// let n = SciDecimal::from_scientific_parts(2, 51, 13, 2, -1);
+    /// assert_eq!(n.to_string(), "0.251(13)");
+    /// let n = SciDecimal::from_scientific_parts(2, 00, 3, 2, -2);
     /// assert_eq!(n.to_string(), "0.0200(3)");
+    /// let n = SciDecimal::from_scientific_parts(1, 48, 3, 6, 6);
+    /// assert_eq!(n.to_string(), "1.048(6)e6");
+    /// // A possibly surprising result:
+    /// let n = SciDecimal::from_scientific_parts(2, 51, 0, 0, 0);
+    /// assert_eq!(n.to_string(), "53");
     /// ```
     pub const fn from_scientific_parts(
-        integer: i8,
-        zeros: u8,
+        integer: i32,
         fraction: u64,
         uncertainty: u32,
+        places: u8,
         exponent: i16,
     ) -> Self {
         let unsigned_integer = integer.unsigned_abs() as u64;
-        let (significand, exponent) = {
-            if fraction != 0 || zeros != 0 {
-                let decimal_places = if fraction == 0 {
-                    0
-                } else {
-                    fraction.ilog10() + 1
-                };
-                let significand =
-                    (unsigned_integer * 10_u64.pow(decimal_places + zeros as u32)) + fraction;
-                let exponent = exponent - (decimal_places as i16 + zeros as i16);
-                (significand, exponent)
-            } else {
-                (unsigned_integer, exponent)
-            }
-        };
+        // Result is (i + (f * 10^-p)) * 10^n
+        // We need to collect i and f into a single integer significand, which
+        // we do by multiplying it by 10^p and dividing the exponential term by
+        // the same:
+        // (i + f⋅10⁻ᵖ) × 10ⁿ = (i + f⋅10⁻ᵖ) × 10ᵖ  ×  10ⁿ / 10ᵖ
+        //                    =    (i⋅10ᵖ + f)   ×   10⁽ⁿ ⁻ ᵖ⁾
+        let significand = (unsigned_integer * 10_u64.pow(places as u32)) + fraction;
         if significand > Self::MAX_SIGNIFICAND {
             panic!("`significand` has too many significant figures for a significand!")
         }
+        let exponent = exponent - (places as i16);
         Self {
             uncertainty,
             uncertainty_scale: 0,
@@ -307,9 +314,9 @@ impl SciDecimal {
     /// fractional part, uncertainty, and exponent of the number when represented
     /// with normalized notation i.e. with 10 > _m_ >= 1.
     ///
-    /// Corresponds to `(ii, z, fff, uu, nn)` when the number is notated as
-    /// `ii.{zeros}fff(uu) × 10^nn`, where `z` is the number of leading zeros
-    /// in the fractional part.
+    /// Corresponds to _i_, _z_, _f_, _u_, _n_ when the number is notated as
+    /// `ii.{zeros}fff(uu)` × 10<sup>`nn`</sup>, where `z` is the number of leading
+    /// zeros in the fractional part.
     ///
     /// # Special values
     ///
@@ -351,8 +358,8 @@ impl SciDecimal {
     /// Returns the signed significand _m_ of the number when represented with
     /// _m_ as an integer.
     ///
-    /// Corresponds to `(-1)^s × mmmmm` in the actual in-memory representation
-    /// of the number as `(-1)^s × mmmmm × 10^nn`
+    /// Corresponds to (−1)<sup>_s_</sup> × _m_ in the actual in-memory representation
+    /// of the number as (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
     ///
     /// Note that the current stored value of the significand is returned even
     /// when the number is not normal (and the value of the significand therefore
@@ -369,8 +376,8 @@ impl SciDecimal {
     /// Returns the unsigned significand _m_ of the number when represented with
     /// _m_ as an integer.
     ///
-    /// Corresponds to `mmmmm` in the actual in-memory representation of the
-    /// number as `(-1)^s × mmmmm × 10^nn`
+    /// Corresponds to _m_ in the actual in-memory representation
+    /// of the number as (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
     ///
     /// Note that the current stored value of the significand is returned even
     /// when the number is not normal (and the value of the significand therefore
@@ -382,8 +389,8 @@ impl SciDecimal {
 
     /// Returns the sign bit; `true` means the `SciDecimal` is negative.
     ///
-    /// Corresponds to `s` in the actual in-memory representation of the number
-    /// as `(-1)^s × mmmmm × 10^nn`
+    /// Corresponds to _s_ in the actual in-memory representation
+    /// of the number as (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
     ///
     /// Note that the current stored value of the sign bit is returned even when
     /// the number is not normal (and the value of the sign therefore moot).
@@ -395,8 +402,8 @@ impl SciDecimal {
     /// Returns the exponent _n_ of the number when represented with _m_ as an
     /// integer.
     ///
-    /// Corresponds to `nn` in the actual in-memory representation of the number
-    /// as `(-1)^s × mmmmm × 10^nn`
+    /// Corresponds to `n` in the actual in-memory representation of the number
+    /// as (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
     ///
     /// Note that the current stored value of the exponent is returned even when
     /// the number is not normal (and the value of the exponent therefore moot).
@@ -1191,45 +1198,291 @@ mod tests {
     use crate::sci;
 
     use super::*;
-}
-/*
+
     #[test]
-    fn new_from_int() {
-        // Using new
-        let n = SciDecimal::new(30, 0);
-        assert_eq!(n.number(), SciDecimal::new(30, 0));
-        assert_eq!(n.uncertainty(), SciDecimal::new(0, 0));
-        // Using from
-        let n = SciDecimal::from(42);
-        assert_eq!(n.number(), SciDecimal::new(42, 0));
-        assert_eq!(n.uncertainty(), SciDecimal::new(0, 0));
+    fn new_exact() {
+        // Small positive integer
+        let n = SciDecimal::new(4, 0); // 4
+        assert!(!n.negative);
+        assert_eq!(n.significand, 4);
+        assert_eq!(n.exponent, 0);
+        assert!(!n.nan);
+        assert!(!n.inf);
+        assert_eq!(n.uncertainty, 0);
+        assert_eq!(n.uncertainty_scale, 0);
+        assert!(!n.uncertainty_nan);
+        assert!(!n.uncertainty_inf);
+        // Small negative integer
+        // Negative integer input stored as unsigned significand and a sign bit
+        let n = SciDecimal::new(-3, 0); // -3
+        assert!(n.negative);
+        assert_eq!(n.significand, 3);
+        assert_eq!(n.exponent, 0);
+        assert!(!n.nan);
+        assert!(!n.inf);
+        assert_eq!(n.uncertainty, 0);
+        assert_eq!(n.uncertainty_scale, 0);
+        assert!(!n.uncertainty_nan);
+        assert!(!n.uncertainty_inf);
+        // Positive number where not all digits are significant
+        let n = SciDecimal::new(30, 3); // 30e3 = 30_000 (with only 2 sf)
+        assert!(!n.negative);
+        assert_eq!(n.significand, 30);
+        assert_eq!(n.exponent, 3);
+        // Positive fractional number between 0 and 1
+        let n = SciDecimal::new(456, -3); // 0.456
+        assert!(!n.negative);
+        assert_eq!(n.significand, 456);
+        assert_eq!(n.exponent, -3);
+        // As above but negative
+        let n = SciDecimal::new(-456, -3); // -0.456
+        assert!(n.negative);
+        assert_eq!(n.significand, 456);
+        assert_eq!(n.exponent, -3);
+        // Positive fractional number greater than 1
+        let n = SciDecimal::new(123456, -4); // 12.3456
+        assert!(!n.negative);
+        assert_eq!(n.significand, 123456);
+        assert_eq!(n.exponent, -4);
+        // As above but negative
+        let n = SciDecimal::new(-123456, -4); // -12.3456
+        assert!(n.negative);
+        assert_eq!(n.significand, 123456);
+        assert_eq!(n.exponent, -4);
+        // Numbers with largest allowed significand is fine
+        // regardless of exponent and sign
+        let max_pos_sig = 10_i64.pow(16) - 1;
+        assert_eq!(max_pos_sig, SciDecimal::MAX_SIGNIFICAND_SIGNED);
+        assert_eq!(max_pos_sig as u64, SciDecimal::MAX_SIGNIFICAND);
+        let n = SciDecimal::new(max_pos_sig, 0);
+        assert!(!n.negative);
+        assert_eq!(n.significand, 9_999_999_999_999_999);
+        assert_eq!(n.exponent, 0);
+        let n = SciDecimal::new(max_pos_sig, 42);
+        assert!(!n.negative);
+        assert_eq!(n.significand, 9_999_999_999_999_999);
+        assert_eq!(n.exponent, 42);
+        let n = SciDecimal::new(max_pos_sig, -42);
+        assert!(!n.negative);
+        assert_eq!(n.significand, 9_999_999_999_999_999);
+        assert_eq!(n.exponent, -42);
+        let max_neg_sig = -max_pos_sig;
+        assert_eq!(max_neg_sig, SciDecimal::MIN_SIGNIFICAND_SIGNED);
+        assert!(max_neg_sig.is_negative());
+        let n = SciDecimal::new(max_neg_sig, 0);
+        assert!(n.negative);
+        assert_eq!(n.significand, 9_999_999_999_999_999);
+        assert_eq!(n.exponent, 0);
+        let n = SciDecimal::new(max_neg_sig, 42);
+        assert!(n.negative);
+        assert_eq!(n.significand, 9_999_999_999_999_999);
+        assert_eq!(n.exponent, 42);
+        let n = SciDecimal::new(max_neg_sig, -42);
+        assert!(n.negative);
+        assert_eq!(n.significand, 9_999_999_999_999_999);
+        assert_eq!(n.exponent, -42);
+        // Largest/smallest significand and exponent are fine (and finite)
+        let n = SciDecimal::new(max_pos_sig, i16::MAX);
+        assert!(!n.negative);
+        assert_eq!(n.significand, 9_999_999_999_999_999);
+        assert_eq!(n.exponent, i16::MAX);
+        assert!(!n.nan);
+        assert!(!n.inf);
+        assert_eq!(n.uncertainty, 0);
+        assert_eq!(n.uncertainty_scale, 0);
+        assert!(!n.uncertainty_nan);
+        assert!(!n.uncertainty_inf);
+        let n = SciDecimal::new(max_neg_sig, i16::MIN);
+        assert!(n.negative);
+        assert_eq!(n.significand, 9_999_999_999_999_999);
+        assert_eq!(n.exponent, i16::MIN);
+        assert!(!n.nan);
+        assert!(!n.inf);
+        assert_eq!(n.uncertainty, 0);
+        assert_eq!(n.uncertainty_scale, 0);
+        assert!(!n.uncertainty_nan);
+        assert!(!n.uncertainty_inf);
     }
 
     #[test]
-    fn new_from_int_with_uncertainty() {
-        let n = SciDecimal::new_with_uncertainty(20, 2, 0);
-        assert_eq!(n.number(), SciDecimal::from(20));
-        assert_eq!(n.uncertainty(), SciDecimal::new(2, 0));
+    #[should_panic]
+    fn new_panics_too_high() {
+        // One higher than maximum significand i.e. +10^16 should panic
+        let _ = SciDecimal::new(10_i64.pow(16), 0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn new_panics_too_low() {
+        // One lower than maximum significand i.e. −(10^16) should panic
+        let _ = SciDecimal::new(-(10_i64.pow(16)), 0);
+    }
+
+    #[test]
+    fn new_with_uncertainty() {
+        // Small positive integer, exact but created using new_with_uncertainty()
+        let n = SciDecimal::new_with_uncertainty(4, 0, 0); // 4
+        assert!(!n.negative);
+        assert_eq!(n.significand, 4);
+        assert_eq!(n.exponent, 0);
+        assert!(!n.nan);
+        assert!(!n.inf);
+        assert_eq!(n.uncertainty, 0);
+        assert_eq!(n.uncertainty_scale, 0);
+        assert!(!n.uncertainty_nan);
+        assert!(!n.uncertainty_inf);
+        // Small positive integer
+        let n = SciDecimal::new_with_uncertainty(4, 2, 0); // 4 ± 2
+        assert!(!n.negative);
+        assert_eq!(n.significand, 4);
+        assert_eq!(n.exponent, 0);
+        assert!(!n.nan);
+        assert!(!n.inf);
+        assert_eq!(n.uncertainty, 2);
+        assert_eq!(n.uncertainty_scale, 0);
+        assert!(!n.uncertainty_nan);
+        assert!(!n.uncertainty_inf);
+        // Small negative integer, uncertainty stored unsigned
+        // Negative integer input stored as unsigned significand and a sign bit
+        let n = SciDecimal::new_with_uncertainty(-3, 1, 0); // −3 ± 1
+        assert!(n.negative);
+        assert_eq!(n.significand, 3);
+        assert_eq!(n.exponent, 0);
+        assert!(!n.nan);
+        assert!(!n.inf);
+        assert_eq!(n.uncertainty, 1);
+        assert_eq!(n.uncertainty_scale, 0);
+        assert!(!n.uncertainty_nan);
+        assert!(!n.uncertainty_inf);
+        // Positive number where not all digits are significant
+        let n = SciDecimal::new_with_uncertainty(30, 4, 3); // 30(4)e3 = 30_000 (with only 2 sf) ± 4_000
+        assert!(!n.negative);
+        assert_eq!(n.significand, 30);
+        assert_eq!(n.exponent, 3);
+        assert_eq!(n.uncertainty, 4);
+        assert_eq!(n.uncertainty_scale, 0);
+        // Uncertainty bigger than the actual value
+        let n = SciDecimal::new_with_uncertainty(-45, 67, -1); // −4.5 ± 6.7
+        assert!(n.negative);
+        assert_eq!(n.significand, 45);
+        assert_eq!(n.exponent, -1);
+        assert_eq!(n.uncertainty, 67);
+        assert_eq!(n.uncertainty_scale, 0);
+        // Positive fractional number between 0 and 1
+        let n = SciDecimal::new_with_uncertainty(456, 3, -3); // 0.456 ± 0.003
+        assert!(!n.negative);
+        assert_eq!(n.significand, 456);
+        assert_eq!(n.exponent, -3);
+        assert_eq!(n.uncertainty, 3);
+        assert_eq!(n.uncertainty_scale, 0);
+        // As above but negative and uncertainty with 2 sf
+        let n = SciDecimal::new_with_uncertainty(-456, 32, -3); // -0.456 ± 0.032
+        assert!(n.negative);
+        assert_eq!(n.significand, 456);
+        assert_eq!(n.exponent, -3);
+        assert_eq!(n.uncertainty, 32);
+        assert_eq!(n.uncertainty_scale, 0);
+        // Positive fractional number greater than 1
+        let n = SciDecimal::new_with_uncertainty(123456, 5, -4); // 12.3456 ± 0.0005
+        assert!(!n.negative);
+        assert_eq!(n.significand, 123456);
+        assert_eq!(n.exponent, -4);
+        assert_eq!(n.uncertainty, 5);
+        assert_eq!(n.uncertainty_scale, 0);
+        // Largest allowed significand is fine even though the significand + the
+        // uncertainty would overflow
+        let n = SciDecimal::new_with_uncertainty(SciDecimal::MAX_SIGNIFICAND_SIGNED, 5, 0);
+        assert!(!n.negative);
+        assert_eq!(n.significand, 9_999_999_999_999_999);
+        assert_eq!(n.exponent, 0);
+        assert_eq!(n.uncertainty, 5);
+        assert_eq!(n.uncertainty_scale, 0);
+        // Largest allowed uncertainty significand is also fine
+        let n = SciDecimal::new_with_uncertainty(SciDecimal::MAX_SIGNIFICAND_SIGNED, u32::MAX, 42);
+        assert!(!n.negative);
+        assert_eq!(n.significand, 9_999_999_999_999_999);
+        assert_eq!(n.exponent, 42);
+        assert_eq!(n.uncertainty, 4294967295);
+        assert_eq!(n.uncertainty_scale, 0);
+        let n = SciDecimal::new_with_uncertainty(
+            SciDecimal::MIN_SIGNIFICAND_SIGNED,
+            u32::MAX,
+            i16::MIN,
+        );
+        assert!(n.negative);
+        assert_eq!(n.significand, 9_999_999_999_999_999);
+        assert_eq!(n.exponent, -32768);
+        assert_eq!(n.uncertainty, 4294967295);
+        assert_eq!(n.uncertainty_scale, 0);
+        let n = SciDecimal::new_with_uncertainty(
+            SciDecimal::MAX_SIGNIFICAND_SIGNED,
+            u32::MAX,
+            i16::MAX,
+        );
+        assert!(!n.negative);
+        assert_eq!(n.significand, 9_999_999_999_999_999);
+        assert_eq!(n.exponent, 32767);
+        assert_eq!(n.uncertainty, 4294967295);
+        assert_eq!(n.uncertainty_scale, 0);
     }
 
     #[test]
     fn from_scientific_parts() {
-        let n1 = SciDecimal::from_scientific_parts(67, 0, 2, 0, 0); // 67.2
-        assert_eq!(n1.to_string(), "67.2");
-        assert_eq!(n1, SciDecimal::new(672, -1));
-
-        let n2 = SciDecimal::from_scientific_parts(67, 1, 0, 0, 0); // 67.0
-        assert_eq!(n2.to_string(), "67.0");
-        assert_eq!(n2, SciDecimal::new(670, -1));
-
-        let n3 = SciDecimal::from_scientific_parts(2, 0, 36, 0, 5);
-        assert_eq!(n3.to_string(), "2.36e5");
-        assert_eq!(n3, sci!(2.36e5));
-
-        let n4 = SciDecimal::from_scientific_parts(23, 0, 61, 0, -7);
-        assert_eq!(n4.to_string(), "2.361e-6");
-        assert_eq!(n4, sci!(2.361e-6));
+        let n = SciDecimal::from_scientific_parts(3, 0, 0, 0, 0); // 3
+        assert!(!n.negative);
+        assert_eq!(n.significand, 3);
+        assert_eq!(n.exponent, 0);
+        assert_eq!(n.uncertainty, 0);
+        assert_eq!(n.uncertainty_scale, 0);
+        let n = SciDecimal::from_scientific_parts(-3, 0, 0, 0, 0); // -3
+        assert!(n.negative);
+        assert_eq!(n.significand, 3);
+        assert_eq!(n.exponent, 0);
+        assert_eq!(n.uncertainty, 0);
+        assert_eq!(n.uncertainty_scale, 0);
+        let n = SciDecimal::from_scientific_parts(3, 0, 0, 1, 0); // 3.0
+        assert!(!n.negative);
+        assert_eq!(n.significand, 30);
+        assert_eq!(n.exponent, -1);
+        assert_eq!(n.uncertainty, 0);
+        assert_eq!(n.uncertainty_scale, 0);
+        let n = SciDecimal::from_scientific_parts(3, 00, 0, 2, 0); // 3.00
+        assert!(!n.negative);
+        assert_eq!(n.significand, 300);
+        assert_eq!(n.exponent, -2);
+        assert_eq!(n.uncertainty, 0);
+        assert_eq!(n.uncertainty_scale, 0);
+        let n = SciDecimal::from_scientific_parts(6, 72, 0, 2, 0); // 6.72e0
+        assert!(!n.negative);
+        assert_eq!(n.significand, 672);
+        assert_eq!(n.exponent, -2);
+        // Specifying `places` as a number less than the actual number of figures in
+        // `fraction` leads to surprising, but entirely predictable results
+        let n = SciDecimal::from_scientific_parts(6, 72, 0, 0, 0); // (6+72)e0 = 78e0
+        assert!(!n.negative);
+        assert_eq!(n.significand, 78);
+        assert_eq!(n.exponent, 0);
+        let n = SciDecimal::from_scientific_parts(-2, 036, 0, 3, 5); // -2.036e5
+        assert!(n.negative);
+        assert_eq!(n.significand, 2036);
+        assert_eq!(n.exponent, 2);
+        // Uncertainty to 1 sf
+        let n = SciDecimal::from_scientific_parts(2, 161, 9, 3, -7); // 2.161(9)e-7
+        assert!(!n.negative);
+        assert_eq!(n.significand, 2161);
+        assert_eq!(n.exponent, -10);
+        assert_eq!(n.uncertainty, 9);
+        assert_eq!(n.uncertainty_scale, 0);
+        // Uncertainty to 2 sf
+        let n = SciDecimal::from_scientific_parts(2, 1613, 92, 4, -7); // 2.1613(92)e-7
+        assert!(!n.negative);
+        assert_eq!(n.significand, 21613);
+        assert_eq!(n.exponent, -11);
+        assert_eq!(n.uncertainty, 92);
+        assert_eq!(n.uncertainty_scale, 0);
     }
+}
+/*
 
     #[test]
     fn new_large() {
