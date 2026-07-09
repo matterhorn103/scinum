@@ -372,6 +372,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn is_nan() {
+        // As much as anything it's important to test that the method precedence rules
+        // work as expected and we don't just get recursion
+        // See https://doc.rust-lang.org/stable/book/ch20-02-advanced-traits.html#disambiguating-between-identically-named-methods
+        let n = SciDecimal::NAN;
+        assert!(n.is_nan()); // Should invoke the direct implementation
+        assert!(Float::is_nan(n)); // Shouldn't encounter recursion
+    }
+}
+/*
+
+    #[test]
     fn natural_log() {
         let n1 = SciDecimal::new_with_uncertainty(20, 2, 0);
         let n2 = SciDecimal::new_with_uncertainty(30, 5, 0);

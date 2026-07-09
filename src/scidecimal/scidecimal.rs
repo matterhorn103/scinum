@@ -1213,9 +1213,7 @@ impl SciDecimal {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
-    use crate::sci;
+    use proptest::prelude::*;
 
     use super::*;
 
@@ -1472,6 +1470,103 @@ mod tests {
         assert_eq!(n.exponent, -11);
         assert_eq!(n.uncertainty, 92);
         assert_eq!(n.uncertainty_scale, 0);
+    }
+
+    #[test]
+    fn is_nan() {
+        // Canonical NaN
+        let n = SciDecimal {
+            significand: 0,
+            uncertainty: 0,
+            exponent: 0,
+            uncertainty_scale: 0,
+            flags: 0xFF,
+        };
+        assert!(n.is_nan());
+        let n = SciDecimal::NAN;
+        assert!(n.is_nan());
+        // The value of bits 0-3 can actually be anything and it's still a NaN
+        for nibble in 0..16 {
+            dbg!(nibble);
+            let n = SciDecimal {
+                significand: 0,
+                uncertainty: 0,
+                exponent: 0,
+                uncertainty_scale: 0,
+                flags: 0xF0 | nibble,
+            };
+            assert!(n.is_nan());
+        }
+        // We promise as an invariant that any NaN will always have 0xFx
+        // But actually, any number with any flags field where bit 7 is 1 should be
+        // correctly identified as a NaN
+        for flags in 0x80..0xEF {
+            dbg!(flags);
+            let n = SciDecimal {
+                significand: 0,
+                uncertainty: 0,
+                exponent: 0,
+                uncertainty_scale: 0,
+                flags,
+            };
+            assert!(n.is_nan());
+        }
+        // Of course, any other flags configuration should not be identified as a NaN
+        for flags in 0x00..0x7F {
+            dbg!(flags);
+            let n = SciDecimal {
+                significand: 0,
+                uncertainty: 0,
+                exponent: 0,
+                uncertainty_scale: 0,
+                flags,
+            };
+            assert!(!n.is_nan());
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn is_always_nan(
+            sign: bool,
+            significand: u64,
+            uncertainty: u32,
+            exponent: i16,
+            uncertainty_scale: i8,
+            flags in 0x80_u8..0xFF_u8, // Bit 7 always 1
+        ) {
+            // Whether the number is NaN or not depends only on the flags field and is
+            // independent of the values of everything else
+            let n = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: (flags & 0xFE) | sign as u8,
+            };
+            prop_assert!(n.is_nan());
+        }
+
+        #[test]
+        fn is_never_nan(
+            sign: bool,
+            significand: u64,
+            uncertainty: u32,
+            exponent: i16,
+            uncertainty_scale: i8,
+            flags in 0x00_u8..0x7F_u8, // Bit 7 always 0
+        ) {
+            // Whether the number is NaN or not depends only on the flags field and is
+            // independent of the values of everything else
+            let n = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: (flags & 0xFE) | sign as u8,
+            };
+            prop_assert!(!n.is_nan());
+        }
     }
 }
 /*

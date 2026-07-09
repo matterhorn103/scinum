@@ -19,3 +19,4 @@ features = ["maths"]
 
 [dev-dependencies]
 itertools = "0.15"
+proptest = "1.11.0"
