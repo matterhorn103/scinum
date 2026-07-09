@@ -11,6 +11,23 @@ pub struct SciFloat {
     pub(crate) uncertainty: f64,
 }
 
+/// Associated constructor functions.
+impl SciFloat {
+    pub const fn new(number: f64) -> Self {
+        Self {
+            number,
+            uncertainty: 0.0,
+        }
+    }
+
+    pub const fn new_with_uncertainty(number: f64, uncertainty: f64) -> Self {
+        Self {
+            number,
+            uncertainty,
+        }
+    }
+}
+
 /// Identity-related constants.
 impl SciFloat {
     /// The lowest supported number.
@@ -54,23 +71,18 @@ impl SciFloat {
         number: -0.0,
         uncertainty: 0.0,
     };
-}
 
-/// Associated constructor functions.
-impl SciFloat {
-    pub const fn new(number: f64) -> Self {
-        Self {
-            number,
-            uncertainty: 0.0,
-        }
-    }
+    /// The `SciFloat` representation of one.
+    pub const ONE: Self = SciFloat {
+        number: 1.0,
+        uncertainty: 0.0,
+    };
 
-    pub const fn new_with_uncertainty(number: f64, uncertainty: f64) -> Self {
-        Self {
-            number,
-            uncertainty,
-        }
-    }
+    /// The `SciFloat` representation of minus one.
+    pub const NEG_ONE: Self = SciFloat {
+        number: 1.0,
+        uncertainty: 0.0,
+    };
 }
 
 #[allow(unused_variables)] // TODO Remove once all methods are implemented
@@ -79,10 +91,7 @@ impl SciNum for SciFloat {
 
     const ZERO: SciFloat = SciFloat::ZERO;
 
-    const ONE: Self = SciFloat {
-        number: 1.0,
-        uncertainty: 0.0,
-    };
+    const ONE: SciFloat = SciFloat::ONE;
 
     /// Returns the number as an `f64`.
     #[inline]

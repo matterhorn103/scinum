@@ -150,125 +150,24 @@ impl SciDecimal {
         exponent: 0,
         significand: 0,
     };
-}
 
-/// Methods for obtaining parts of the contained data.
-impl SciDecimal {
-    /// Returns the `NaN` bit; `true` means the `SciDecimal` must be a `NaN`.
-    #[inline]
-    pub(crate) fn nan_bit(&self) -> bool {
-        self.flags & 0x80 != 0
-    }
+    /// The `SciDecimal` representation of one.
+    pub const ONE: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        flags: 0x00,
+        exponent: 0,
+        significand: 1,
+    };
 
-    /// Returns the infinity bit; `true` means the `SciDecimal` is either +∞, −∞, or
-    /// a `NaN`.
-    #[inline]
-    pub(crate) fn inf_bit(&self) -> bool {
-        self.flags & 0x30 != 0
-    }
-
-    /// Returns the sign bit; `true` means the `SciDecimal` is negative (unless it is a
-    /// `NaN`).
-    ///
-    /// Corresponds to _s_ in the representation of the number as
-    /// (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
-    ///
-    /// Note that the current stored value of the sign bit is returned even when
-    /// the number is a `NaN` (and the value of the sign therefore moot).
-    #[inline]
-    pub fn sign_bit(&self) -> bool {
-        (self.flags & 0x01) != 0
-    }
-
-    /// Returns the unsigned significand _m_ of the number when represented with
-    /// _m_ as an integer.
-    ///
-    /// Corresponds to _m_ in the representation of the number as
-    /// (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
-    ///
-    /// Note that the current stored value of the significand is returned even
-    /// when the number is not finite (and the value of the significand therefore
-    /// moot).
-    #[inline]
-    pub fn significand(&self) -> u64 {
-        self.significand
-    }
-
-    /// Returns the signed significand _m_ of the number when represented with
-    /// _m_ as an integer.
-    ///
-    /// Corresponds to (−1)<sup>_s_</sup> × _m_ in the representation
-    /// of the number as (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
-    ///
-    /// Note that the current stored value of the significand is returned even
-    /// when the number is not finite (and the value of the significand therefore
-    /// moot).
-    #[inline]
-    pub fn signed_significand(&self) -> i64 {
-        if self.sign_bit() {
-            -(self.significand as i64)
-        } else {
-            self.significand as i64
-        }
-    }
-
-    /// Returns the exponent _n_ of the number when represented with _m_ as an
-    /// integer.
-    ///
-    /// Corresponds to `n` in the representation of the number
-    /// as (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
-    ///
-    /// Note that the current stored value of the exponent is returned even when
-    /// the number is not finite (and the value of the exponent therefore moot).
-    #[inline]
-    pub fn exponent(&self) -> i16 {
-        self.exponent
-    }
-
-    /// Returns the integer part, number of fractional leading zeros,
-    /// fractional part, uncertainty, and exponent of the number when represented
-    /// with normalized notation i.e. with 10 > _m_ >= 1.
-    ///
-    /// Corresponds to _i_, _z_, _f_, _u_, _n_ when the number is notated as
-    /// `ii.{zeros}fff(uu)` × 10<sup>`nn`</sup>, where `z` is the number of leading
-    /// zeros in the fractional part.
-    ///
-    /// # Special values
-    ///
-    /// Unlike `significand()`, `sign()`, and `exponent()`, this method does not
-    /// just return the stored values in all cases.
-    ///
-    /// - ±0 → `Some((0, 0, 0, 0, 0))`
-    ///
-    /// - ±∞ and `NaN` → `None`
-    pub fn scientific_parts(&self) -> Option<(i8, u8, u64, u32, i16)> {
-        if self.is_zero() {
-            return Some((0, 0, 0, 0, 0));
-        };
-        if !self.is_finite() {
-            todo!("Special values are not yet handled correctly by this method!")
-        }
-        let figs = self.sf() as u32;
-        let int_unsigned = self.significand / 10_u64.pow(figs - 1); // First digit
-        let int = if self.sign_bit() {
-            -(int_unsigned as i8)
-        } else {
-            int_unsigned as i8
-        };
-        let frac = self.significand % 10_u64.pow(figs - 1);
-        // Work out how many zeros have been dropped, if any
-        let figs_in_frac = frac.checked_ilog10().map_or(0, |x| x + 1);
-        let zeros = (figs - 1 - figs_in_frac) as u8; // 1 is for integer digit
-        let uncert = self.uncertainty;
-        let exp = self.exponent + (figs as i16 - 1);
-        // For example:
-        // 1.23e2 = 123 is stored as (123, 0)       =>  2 =  0 + (3 - 1)
-        // 4.5e6 = 4_500_000 is stored as (45, 5)   =>  6 =  5 + (2 - 1)
-        // 4.5e-3 = 0.0045 is stored as (45, -4)    => -3 = -4 + (2 - 1)
-        // 4.51e-3 = 0.00451 is stored as (451, -5) => -3 = -5 + (3 - 1)
-        // 4.50e-3 = 0.00450 is stored as (450, -5) => -3 = -5 + (3 - 1)
-        Some((int, zeros, frac, uncert, exp))
-    }
+    /// The `SciDecimal` representation of minus one.
+    pub const NEG_ONE: SciDecimal = SciDecimal {
+        uncertainty: 0,
+        uncertainty_scale: 0,
+        flags: 0x01,
+        exponent: 0,
+        significand: 1,
+    };
 }
 
 /// Associated constructor functions.
@@ -416,8 +315,155 @@ impl SciDecimal {
     }
 }
 
-/// Methods testing predicates that aren't part of trait implementations.
+/// Methods for obtaining parts of the contained data.
 impl SciDecimal {
+    /// Returns the `NaN` bit; `true` means the `SciDecimal` must be a `NaN`.
+    #[inline]
+    pub(crate) fn nan_bit(&self) -> bool {
+        self.flags & 0x80 != 0
+    }
+
+    /// Returns the infinity bit; `true` means the `SciDecimal` is either +∞, −∞, or
+    /// a `NaN`.
+    #[inline]
+    pub(crate) fn inf_bit(&self) -> bool {
+        self.flags & 0x30 != 0
+    }
+
+    /// Returns the sign bit; `true` means the `SciDecimal` is negative (unless it is a
+    /// `NaN`).
+    ///
+    /// Corresponds to _s_ in the representation of the number as
+    /// (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
+    ///
+    /// Note that the current stored value of the sign bit is returned even when
+    /// the number is a `NaN` (and the value of the sign therefore moot).
+    #[inline]
+    pub fn sign_bit(&self) -> bool {
+        (self.flags & 0x01) != 0
+    }
+
+    /// Returns the unsigned significand _m_ of the number when represented with
+    /// _m_ as an integer.
+    ///
+    /// Corresponds to _m_ in the representation of the number as
+    /// (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
+    ///
+    /// Note that the current stored value of the significand is returned even
+    /// when the number is not finite (and the value of the significand therefore
+    /// moot).
+    #[inline]
+    pub fn significand(&self) -> u64 {
+        self.significand
+    }
+
+    /// Returns the signed significand _m_ of the number when represented with
+    /// _m_ as an integer.
+    ///
+    /// Corresponds to (−1)<sup>_s_</sup> × _m_ in the representation
+    /// of the number as (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
+    ///
+    /// Note that the current stored value of the significand is returned even
+    /// when the number is not finite (and the value of the significand therefore
+    /// moot).
+    #[inline]
+    pub fn signed_significand(&self) -> i64 {
+        if self.sign_bit() {
+            -(self.significand as i64)
+        } else {
+            self.significand as i64
+        }
+    }
+
+    /// Returns the exponent _n_ of the number when represented with _m_ as an
+    /// integer.
+    ///
+    /// Corresponds to `n` in the representation of the number
+    /// as (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
+    ///
+    /// Note that the current stored value of the exponent is returned even when
+    /// the number is not finite (and the value of the exponent therefore moot).
+    #[inline]
+    pub fn exponent(&self) -> i16 {
+        self.exponent
+    }
+
+    /// Returns the integer part, number of fractional leading zeros,
+    /// fractional part, uncertainty, and exponent of the number when represented
+    /// with normalized notation i.e. with 10 > _m_ >= 1.
+    ///
+    /// Corresponds to _i_, _z_, _f_, _u_, _n_ when the number is notated as
+    /// `ii.{zeros}fff(uu)` × 10<sup>`nn`</sup>, where `z` is the number of leading
+    /// zeros in the fractional part.
+    ///
+    /// # Special values
+    ///
+    /// Unlike `significand()`, `sign()`, and `exponent()`, this method does not
+    /// just return the stored values in all cases.
+    ///
+    /// - ±0 → `Some((0, 0, 0, 0, 0))`
+    ///
+    /// - ±∞ and `NaN` → `None`
+    pub fn scientific_parts(&self) -> Option<(i8, u8, u64, u32, i16)> {
+        if self.is_zero() {
+            return Some((0, 0, 0, 0, 0));
+        };
+        if !self.is_finite() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        let figs = self.sf() as u32;
+        let int_unsigned = self.significand / 10_u64.pow(figs - 1); // First digit
+        let int = if self.sign_bit() {
+            -(int_unsigned as i8)
+        } else {
+            int_unsigned as i8
+        };
+        let frac = self.significand % 10_u64.pow(figs - 1);
+        // Work out how many zeros have been dropped, if any
+        let figs_in_frac = frac.checked_ilog10().map_or(0, |x| x + 1);
+        let zeros = (figs - 1 - figs_in_frac) as u8; // 1 is for integer digit
+        let uncert = self.uncertainty;
+        let exp = self.exponent + (figs as i16 - 1);
+        // For example:
+        // 1.23e2 = 123 is stored as (123, 0)       =>  2 =  0 + (3 - 1)
+        // 4.5e6 = 4_500_000 is stored as (45, 5)   =>  6 =  5 + (2 - 1)
+        // 4.5e-3 = 0.0045 is stored as (45, -4)    => -3 = -4 + (2 - 1)
+        // 4.51e-3 = 0.00451 is stored as (451, -5) => -3 = -5 + (3 - 1)
+        // 4.50e-3 = 0.00450 is stored as (450, -5) => -3 = -5 + (3 - 1)
+        Some((int, zeros, frac, uncert, exp))
+    }
+}
+
+/// Methods testing predicates.
+impl SciDecimal {
+    /// Returns `true` if the number is `NaN` and `false` otherwise.
+    #[inline]
+    pub fn is_nan(self) -> bool {
+        self.nan_bit()
+    }
+
+    /// Returns `true` if the number is positive infinity or negative infinity and
+    /// `false` otherwise.
+    #[inline]
+    pub fn is_infinite(self) -> bool {
+        // The NaN flag overrides the infinity flag i.e. if a `SciDecimal` has
+        // both `1` then it is considered a NaN and therefore *not infinite*.
+        // We therefore have to compare against both bits
+        self.flags & 0xC0 == 0x70
+    }
+
+    /// Returns `true` if the number is neither infinite nor `NaN`.
+    #[inline]
+    pub fn is_finite(self) -> bool {
+        self.flags & 0xC0 == 0
+    }
+
+    /// Returns `true` if the number is neither zero, infinite, or `NaN`.
+    #[inline]
+    pub fn is_normal(self) -> bool {
+        self.is_finite() && self.significand != 0
+    }
+
     /// Returns `true` if the uncertainty is `NaN` and `false` otherwise.
     #[inline]
     pub fn uncertainty_is_nan(self) -> bool {
@@ -625,13 +671,7 @@ impl SciNum for SciDecimal {
 
     const ZERO: SciDecimal = SciDecimal::ZERO;
 
-    const ONE: SciDecimal = SciDecimal {
-        uncertainty: 0,
-        uncertainty_scale: 0,
-        flags: 0x00,
-        exponent: 0,
-        significand: 1,
-    };
+    const ONE: SciDecimal = SciDecimal::ONE;
 
     #[inline]
     fn number(&self) -> Self {
@@ -1017,20 +1057,13 @@ impl One for SciDecimal {
 impl SciDecimal {
     // TODO Add more of the constants that f64 has https://doc.rust-lang.org/std/f64/consts/index.html
 
+    /// The `SciDecimal` representation of two.
     pub const TWO: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
         flags: 0x00,
         exponent: 0,
         significand: 2,
-    };
-
-    pub const NEG_ONE: SciDecimal = SciDecimal {
-        uncertainty: 0,
-        uncertainty_scale: 0,
-        flags: 0x01,
-        exponent: 0,
-        significand: 1,
     };
 
     /// The mathematical constant *π*.

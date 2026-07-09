@@ -31,39 +31,39 @@ impl Float for SciDecimal {
         Self::NEG_ZERO
     }
 
+    #[inline]
     fn min_value() -> Self {
         Self::MIN
     }
 
+    #[inline]
     fn min_positive_value() -> Self {
         Self::MIN_POSITIVE
     }
 
+    #[inline]
     fn max_value() -> Self {
         Self::MAX
     }
 
     #[inline]
     fn is_nan(self) -> bool {
-        self.nan_bit()
+        self.is_nan()
     }
 
     #[inline]
     fn is_infinite(self) -> bool {
-        // The NaN flag overrides the infinity flag i.e. if a `SciDecimal` has
-        // both `1` then it is considered a NaN and therefore *not infinite*.
-        // We therefore have to compare against both bits
-        self.flags & 0xC0 == 0x70
+        self.is_infinite()
     }
 
     #[inline]
     fn is_finite(self) -> bool {
-        self.flags & 0xC0 == 0
+        self.is_finite()
     }
 
     #[inline]
     fn is_normal(self) -> bool {
-        self.is_finite() && self.significand != 0
+        self.is_normal()
     }
 
     #[inline]
@@ -79,22 +79,27 @@ impl Float for SciDecimal {
         }
     }
 
+    #[inline]
     fn floor(self) -> Self {
         self.round_precision(0, RoundingMode::Floor)
     }
 
+    #[inline]
     fn ceil(self) -> Self {
         self.round_precision(0, RoundingMode::Ceiling)
     }
 
+    #[inline]
     fn round(self) -> Self {
         self.round_precision(0, RoundingMode::HalfUp)
     }
 
+    #[inline]
     fn trunc(self) -> Self {
         self.round_precision(0, RoundingMode::Down)
     }
 
+    #[inline]
     fn fract(self) -> Self {
         self - self.trunc()
     }
@@ -272,6 +277,7 @@ impl Float for SciDecimal {
     /// Returns the maximum of the two numbers.
     ///
     /// If the two are equal, returns `self` (relevant for the uncertainty).
+    #[inline]
     fn max(self, other: Self) -> Self {
         if other > self { other } else { self }
     }
@@ -279,6 +285,7 @@ impl Float for SciDecimal {
     /// Returns the minimum of the two numbers.
     ///
     /// If the two are equal, returns `self` (relevant for the uncertainty).
+    #[inline]
     fn min(self, other: Self) -> Self {
         if other < self { other } else { self }
     }
@@ -359,7 +366,7 @@ impl Float for SciDecimal {
         todo!()
     }
 }
-/*
+
 #[cfg(test)]
 mod tests {
     use super::*;
