@@ -153,14 +153,20 @@ mod error;
 mod integer;
 mod rounding;
 mod scicast;
-mod scidecimal;
-mod scifloat;
 mod scinum;
 mod uncertainties;
 
 pub use error::SciNumError;
 pub use rounding::RoundingMode;
 pub use scicast::{CheckedSciCast, CheckedSciCastFrom, SciCast, SciCastFrom};
-pub use scidecimal::scidecimal::SciDecimal;
-pub use scifloat::scifloat::SciFloat;
 pub use scinum::SciNum;
+
+#[cfg(feature = "scidecimal")]
+mod scidecimal;
+#[cfg(feature = "scidecimal")]
+pub use scidecimal::scidecimal::SciDecimal;
+
+#[cfg(feature = "scifloat")]
+mod scifloat;
+#[cfg(feature = "scifloat")]
+pub use scifloat::scifloat::SciFloat;

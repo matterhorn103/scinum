@@ -7,9 +7,12 @@ use num_traits::{Float, FromPrimitive, NumCast, ToPrimitive, Zero};
 use rust_decimal::Decimal;
 
 use crate::{
-    RoundingMode, SciDecimal, SciFloat, SciNum,
+    RoundingMode, SciDecimal, SciNum,
     scicast::{CheckedSciCast, SciCast},
 };
+
+#[cfg(feature = "scifloat")]
+use crate::SciFloat;
 
 // No-op casting from integers
 
@@ -40,6 +43,7 @@ impl SciCast<SciDecimal> for f64 {
     }
 }
 
+#[cfg(feature = "scifloat")]
 impl SciCast<SciDecimal> for SciFloat {
     fn cast(self) -> SciDecimal {
         self.number()
