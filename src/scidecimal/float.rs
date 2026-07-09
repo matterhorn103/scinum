@@ -45,31 +45,32 @@ impl Float for SciDecimal {
 
     #[inline]
     fn is_nan(self) -> bool {
-        self.nan
+        self.nan_bit()
     }
 
     #[inline]
     fn is_infinite(self) -> bool {
         // The NaN flag overrides the infinity flag i.e. if a `SciDecimal` has
-        // both `true` then it is considered a NaN and therefore *not infinite*
-        self.inf & !self.nan
+        // both `1` then it is considered a NaN and therefore *not infinite*.
+        // We therefore have to compare against both bits
+        self.flags & 0xC0 == 0x70
     }
 
     #[inline]
     fn is_finite(self) -> bool {
-        !(self.inf | self.nan)
+        self.flags & 0xC0 == 0
     }
 
     #[inline]
     fn is_normal(self) -> bool {
-        !(self.inf | self.nan | (self.significand == 0))
+        self.is_finite() && self.significand != 0
     }
 
     #[inline]
     fn classify(self) -> FpCategory {
-        if self.nan {
+        if self.nan_bit() {
             FpCategory::Nan
-        } else if self.inf {
+        } else if self.inf_bit() {
             FpCategory::Infinite
         } else if self.significand == 0 {
             FpCategory::Zero
@@ -99,46 +100,36 @@ impl Float for SciDecimal {
     }
 
     fn abs(self) -> Self {
-        if self.nan {
+        if self.is_nan() {
             Self::NAN
         } else {
             Self {
-                negative: false,
+                flags: self.flags & !0x01,
                 ..self
             }
         }
     }
 
     fn signum(self) -> Self {
-        if self.nan {
+        if self.is_nan() {
             Self::NAN
-        } else if self.negative {
+        } else if self.sign_bit() {
             Self::NEG_ONE
         } else {
             Self::ONE
         }
     }
 
-    /// Returns true if the sign bit is positive.
-    /// Zero is also considered positive.
     #[inline]
     //#[must_use]
     fn is_sign_positive(self) -> bool {
-        if self.is_nan() {
-            todo!("Special values are not yet handled correctly by this method!")
-        }
-        !self.negative
+        !self.sign_bit()
     }
 
-    /// Returns true if the sign bit is negative.
-    /// Zero is considered positive.
     #[inline]
     //#[must_use]
     fn is_sign_negative(self) -> bool {
-        if self.is_nan() {
-            todo!("Special values are not yet handled correctly by this method!")
-        }
-        self.negative
+        self.sign_bit()
     }
 
     /// Fused multiply-add. Computes (self * a) + b with only one rounding error,

@@ -4,7 +4,7 @@ use core::fmt;
 use std::str::FromStr;
 
 use bigdecimal::BigDecimal;
-use num_traits::{Num, Zero};
+use num_traits::{Float, Num, Zero};
 use regex::Regex;
 
 use crate::{RoundingMode, SciDecimal, SciNum, SciNumError, scicast::SciCast};
@@ -12,17 +12,17 @@ use crate::{RoundingMode, SciDecimal, SciNum, SciNumError, scicast::SciCast};
 impl SciDecimal {
     pub fn to_plain_string(&self) -> String {
         // Handle NaN
-        if self.nan {
+        if self.is_nan() {
             return String::from("NaN");
         }
         // Get sign character
-        let sign = if self.negative {
+        let sign = if self.sign_bit() {
             String::from("-")
         } else {
             String::new()
         };
         // Handle infinities
-        if self.inf {
+        if self.inf_bit() {
             return format!("{sign}inf");
         }
         // Handle zeros
@@ -68,17 +68,17 @@ impl SciDecimal {
 
     pub fn to_scientific_string(&self) -> String {
         // Handle NaN
-        if self.nan {
+        if self.is_nan() {
             return String::from("NaN");
         }
         // Get sign character
-        let sign = if self.negative {
+        let sign = if self.sign_bit() {
             String::from("-")
         } else {
             String::new()
         };
         // Handle infinities
-        if self.inf {
+        if self.inf_bit() {
             return format!("{}inf", sign);
         }
         let uncertainty = if self.is_exact() {
@@ -198,11 +198,7 @@ impl FromStr for SciDecimal {
         let num = Self {
             uncertainty,
             uncertainty_scale: 0,
-            uncertainty_inf: false,
-            uncertainty_nan: false,
-            nan: false,
-            inf: false,
-            negative,
+            flags: negative as u8,
             exponent,
             significand,
         };

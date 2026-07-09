@@ -1,13 +1,13 @@
 //! Comparison and ordering trait implementations for [`SciDecimal`].
 
-use num_traits::Zero;
+use num_traits::{Float, Zero};
 
 use crate::{SciDecimal, SciNum};
 
 impl PartialEq for SciDecimal {
     fn eq(&self, other: &Self) -> bool {
         // NaN is never equal to anything, even itself
-        if self.nan | other.nan {
+        if self.is_nan() | other.is_nan() {
             false
         // +0 == +0, but also +0 == -0
         } else if self.is_zero() && other.is_zero() {
@@ -15,12 +15,12 @@ impl PartialEq for SciDecimal {
         } else if self.is_zero() || other.is_zero() {
             false
         // Can't be equal if sign is different, so short circuit if so
-        } else if self.negative != other.negative {
+        } else if self.sign_bit() != other.sign_bit() {
             false
         // ∞ == ∞, -∞ == -∞, +∞ != -∞ but we already checked the signs are the same
-        } else if self.inf & other.inf {
+        } else if self.inf_bit() & other.inf_bit() {
             true
-        } else if self.inf | other.inf {
+        } else if self.inf_bit() | other.inf_bit() {
             false
         } else if self.exponent == other.exponent {
             self.significand == other.significand
@@ -53,49 +53,49 @@ impl PartialOrd for SciDecimal {
         use std::cmp::Ordering;
 
         // NaN can't be compared
-        if self.nan | other.nan {
+        if self.is_nan() | other.is_nan() {
             return None;
         }
         if self.is_zero() {
             if other.is_zero() {
                 // Zeros are equal regardless of sign
                 return Some(Ordering::Equal);
-            } else if other.negative {
+            } else if other.sign_bit() {
                 return Some(Ordering::Greater);
             } else {
                 return Some(Ordering::Less);
             }
         } else if other.is_zero() {
             // Checked for both being zero already
-            if self.negative {
+            if self.sign_bit() {
                 return Some(Ordering::Less);
             } else {
                 return Some(Ordering::Greater);
             }
         }
         // Different signs are easily ordered
-        if self.negative != other.negative {
-            return Some(if self.negative {
+        if self.sign_bit() != other.sign_bit() {
+            return Some(if self.sign_bit() {
                 Ordering::Less
             } else {
                 Ordering::Greater
             });
         }
         // Infinities
-        match (self.inf, other.inf) {
+        match (self.inf_bit(), other.inf_bit()) {
             (true, true) => {
                 // Must be same sign because we already compared signs
                 return Some(Ordering::Equal);
             }
             (true, false) => {
-                return Some(if self.negative {
+                return Some(if self.sign_bit() {
                     Ordering::Less
                 } else {
                     Ordering::Greater
                 });
             }
             (false, true) => {
-                return Some(if other.negative {
+                return Some(if other.sign_bit() {
                     Ordering::Greater
                 } else {
                     Ordering::Less
@@ -129,7 +129,7 @@ impl PartialOrd for SciDecimal {
             }
         };
         // If both are negative then the order is actually the reverse
-        Some(if self.negative {
+        Some(if self.sign_bit() {
             ordering.reverse()
         } else {
             ordering

@@ -27,13 +27,13 @@ impl SciDecimal {
         // increase the exponent instead of panicking
 
         // Handle NaN
-        if self.nan | rhs.nan {
+        if self.is_nan() | rhs.is_nan() {
             return Self::NAN;
         }
         // Handle infinities
-        match (self.inf, rhs.inf) {
+        match (self.inf_bit(), rhs.inf_bit()) {
             (true, true) => {
-                if self.negative == rhs.negative {
+                if self.sign_bit() == rhs.sign_bit() {
                     // ∞ + ∞ = ∞, -∞ + -∞ = -∞
                     return self;
                 } else {
@@ -59,7 +59,7 @@ impl SciDecimal {
         match self.exponent.cmp(&rhs.exponent) {
             // In the simplest case, the exponents are the same
             Ordering::Equal => {
-                let number = self.significand_signed() + rhs.significand_signed();
+                let number = self.signed_significand() + rhs.signed_significand();
                 Self::new(number, self.exponent)
             }
             // Otherwise have to try and set the exponent to the same for both terms
@@ -67,13 +67,13 @@ impl SciDecimal {
             Ordering::Less => {
                 let exp_diff = rhs.exponent - self.exponent;
                 let scaled = rhs.increase_precision(exp_diff.try_into().unwrap());
-                let number = self.significand_signed() + scaled.significand_signed();
+                let number = self.signed_significand() + scaled.signed_significand();
                 Self::new(number, self.exponent)
             }
             Ordering::Greater => {
                 let exp_diff = self.exponent - rhs.exponent;
                 let scaled = self.increase_precision(exp_diff.try_into().unwrap());
-                let number = scaled.significand_signed() + rhs.significand_signed();
+                let number = scaled.signed_significand() + rhs.signed_significand();
                 Self::new(number, scaled.exponent)
             }
         }
@@ -83,12 +83,12 @@ impl SciDecimal {
     /// significand greater than `SciDecimal::MAX_SIGNIFICAND` and up to `u64::MAX`.
     pub(crate) fn unbounded_mul(self, rhs: Self) -> Self {
         // Handle NaN
-        if self.nan | rhs.nan {
+        if self.is_nan() | rhs.is_nan() {
             return Self::NAN;
         }
-        let negative = self.negative ^ rhs.negative;
+        let negative = self.sign_bit() ^ rhs.sign_bit();
         // Handle infinities
-        match (self.inf, rhs.inf) {
+        match (self.inf_bit(), rhs.inf_bit()) {
             (true, true) => {
                 if negative {
                     return Self::NEG_INFINITY;
@@ -154,11 +154,7 @@ impl SciDecimal {
         Self {
             uncertainty: 0,
             uncertainty_scale: 0,
-            uncertainty_inf: false,
-            uncertainty_nan: false,
-            nan: false,
-            inf: false,
-            negative,
+            flags: negative as u8,
             exponent,
             significand,
         }
@@ -188,12 +184,12 @@ impl SciDecimal {
     /// - Either `self` or `rhs` is `NaN` → `NaN`
     pub(crate) fn unbounded_div(self, rhs: Self) -> Self {
         // Handle NaN
-        if self.nan | rhs.nan {
+        if self.is_nan() | rhs.is_nan() {
             return Self::NAN;
         }
-        let negative = self.negative ^ rhs.negative;
+        let negative = self.sign_bit() ^ rhs.sign_bit();
         // Handle infinities
-        match (self.inf, rhs.inf) {
+        match (self.inf_bit(), rhs.inf_bit()) {
             (true, true) => {
                 // ∞/∞ is undefined
                 return Self::NAN;
@@ -268,11 +264,7 @@ impl SciDecimal {
         Self {
             uncertainty: 0,
             uncertainty_scale: 0,
-            uncertainty_inf: false,
-            uncertainty_nan: false,
-            nan: false,
-            inf: false,
-            negative,
+            flags: negative as u8,
             exponent,
             significand,
         }
@@ -287,7 +279,7 @@ impl SciDecimal {
         if n.is_negative() {
             self.powi(n.abs()).inv()
         } else {
-            let number = self.significand_signed().pow(n.try_into().unwrap());
+            let number = self.signed_significand().pow(n.try_into().unwrap());
             let exponent = self.exponent * i16::try_from(n).unwrap();
             Self::new(number, exponent)
         }
@@ -442,14 +434,14 @@ impl Rem for SciDecimal {
     /// and the returned result will be exact.
     fn rem(self, rhs: Self) -> Self {
         // Handle NaN
-        if self.nan | rhs.nan {
+        if self.is_nan() | rhs.is_nan() {
             return Self::NAN;
         }
         // Handle infinities
-        if self.inf {
+        if self.inf_bit() {
             // Can't find remainder of infinity
             return Self::NAN;
-        } else if rhs.inf {
+        } else if rhs.inf_bit() {
             return self;
         }
         // Handle zeros
@@ -489,7 +481,7 @@ impl Pow<Self> for SciDecimal {
             && rhs.exponent.is_zero()
             && (rhs.exponent <= i8::MAX.into() && rhs.exponent >= i8::MIN.into())
         {
-            let n = rhs.significand_signed();
+            let n = rhs.signed_significand();
             self.unbounded_powi(
                 n.try_into()
                     .expect("n has already been checked and should fit into even an i8"),
@@ -531,7 +523,7 @@ impl Neg for SciDecimal {
     #[inline]
     fn neg(self) -> Self {
         Self {
-            negative: !self.negative,
+            flags: self.flags ^ 0x01,
             ..self
         }
     }
@@ -543,7 +535,7 @@ impl Neg for &SciDecimal {
     #[inline]
     fn neg(self) -> SciDecimal {
         SciDecimal {
-            negative: !self.negative,
+            flags: self.flags ^ 0x01,
             ..*self
         }
     }
@@ -1130,10 +1122,10 @@ fn rem_special() {
         let n_pos = SciDecimal::new(4, 0);
         let n_neg = n_pos.neg();
         assert_eq!(n_neg, SciDecimal::new(-4, 0));
-        assert!(n_neg.negative);
+        assert!(n_neg.sign_bit());
         assert_eq!(n_neg.significand, 4);
         let n_roundtrip = n_neg.neg();
-        assert!(!n_roundtrip.negative);
+        assert!(!n_roundtrip.sign_bit());
         assert_eq!(n_roundtrip, n_pos);
     }
 }

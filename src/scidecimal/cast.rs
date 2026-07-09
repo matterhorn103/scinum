@@ -83,11 +83,7 @@ impl SciCast<SciDecimal> for Decimal {
         let unrounded = SciDecimal {
             uncertainty: 0,
             uncertainty_scale: 0,
-            uncertainty_nan: false,
-            uncertainty_inf: false,
-            nan: false,
-            inf: false,
-            negative,
+            flags: negative as u8,
             exponent,
             significand: narrowed_significand,
         };
@@ -103,10 +99,10 @@ impl SciCast<SciDecimal> for Decimal {
 
 impl SciCast<f64> for SciDecimal {
     fn cast(self) -> f64 {
-        if self.nan {
+        if self.is_nan() {
             f64::NAN
-        } else if self.inf {
-            if self.negative {
+        } else if self.inf_bit() {
+            if self.sign_bit() {
                 f64::NEG_INFINITY
             } else {
                 f64::INFINITY
@@ -116,7 +112,7 @@ impl SciCast<f64> for SciDecimal {
         } else if self < f64::MIN.cast() {
             f64::NEG_INFINITY
         } else if self.abs() < f64::MIN_POSITIVE.cast() {
-            if self.negative { -0.0 } else { 0.0 }
+            if self.sign_bit() { -0.0 } else { 0.0 }
         } else {
             // Otherwise, must be able to fit, if we just drop excess precision
             // Don't waste time adding trailing zeros if we don't have to
@@ -143,9 +139,9 @@ impl CheckedSciCast<BigDecimal> for SciDecimal {
     // - no -0, no inf, no NaN
 
     fn checked_cast(self) -> Option<BigDecimal> {
-        if self.nan {
+        if self.is_nan() {
             None
-        } else if self.inf {
+        } else if self.inf_bit() {
             None
         } else {
             Some(
@@ -164,7 +160,7 @@ impl SciCast<Decimal> for SciDecimal {
     // - no -0, no inf, no NaN
 
     fn cast(self) -> Decimal {
-        if self.nan {
+        if self.is_nan() {
             Decimal::ZERO
         } else if self > Decimal::MAX.cast() {
             // Includes inf
@@ -183,7 +179,7 @@ impl SciCast<Decimal> for SciDecimal {
 
 impl CheckedSciCast<Decimal> for SciDecimal {
     fn checked_cast(self) -> Option<Decimal> {
-        if self.nan {
+        if self.is_nan() {
             None
         } else if self > Decimal::MAX.cast() {
             // Includes inf
@@ -237,12 +233,12 @@ impl ToPrimitive for SciDecimal {
                 // therefore so is the resulting number
                 Some(
                     self.round_precision(0, RoundingMode::HalfUp)
-                        .significand_signed(),
+                        .signed_significand(),
                 )
             }
-            Ordering::Equal => Some(self.significand_signed()),
+            Ordering::Equal => Some(self.signed_significand()),
             Ordering::Greater => self
-                .significand_signed()
+                .signed_significand()
                 .checked_mul(10_i64.pow(self.exponent() as u32)),
         }
     }

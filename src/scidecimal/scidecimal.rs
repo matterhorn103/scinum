@@ -21,15 +21,48 @@ use crate::{RoundingMode, SciNum, rounding::cmp_tie};
 /// enabling typical scientific calculations.
 #[derive(Copy, Clone, Debug, serde_with::DeserializeFromStr, serde_with::SerializeDisplay)]
 pub struct SciDecimal {
-    pub(crate) uncertainty: u32,
-    pub(crate) uncertainty_scale: i8, // This allows the uncertainty to have a different precision
-    pub(crate) uncertainty_nan: bool,
-    pub(crate) uncertainty_inf: bool,
-    pub(crate) nan: bool,
-    pub(crate) inf: bool,
-    pub(crate) negative: bool,
-    pub(crate) exponent: i16,
     pub(crate) significand: u64,
+    pub(crate) uncertainty: u32,
+    pub(crate) exponent: i16,
+    pub(crate) uncertainty_scale: i8, // This allows the uncertainty to have a different precision
+    /// Flag bits for sign as well as infinity and `NaN` values.
+    ///
+    /// Bit 0 is the sign bit (`1` is negative).
+    ///
+    /// Bits 1–3 are currently unused.
+    ///
+    /// Bits 4–7 can currently have one of five bit patterns:
+    ///
+    /// |  Bits  | Hex | Number | Uncertainty |
+    /// | ------ | --- | ------ | ----------- |
+    /// | `0000` | `0` | finite |    finite   |
+    /// | `0001` | `1` | finite |      ∞      |
+    /// | `0011` | `3` | finite |    `NaN`    |
+    /// | `0111` | `7` |   ∞    |    `NaN`    |
+    /// | `1111` | `F` | `NaN`  |    `NaN`    |
+    ///
+    /// In this way, bit 7 can function as a boolean flag for the number being `NaN`,
+    /// and bit 5 a flag for the uncertainty being `NaN` – the patterns have been chosen
+    /// so as to match the fact that when the number is `NaN` or ∞ the uncertainty is
+    /// defined as being `NaN`.
+    ///
+    /// As both finite numbers and ∞ can be negative, `flags` will have one of
+    /// 24 values, of which 16 are just different `NaN`s:
+    ///
+    /// | Hex  |   Number    | Uncertainty |
+    /// | ---- | ----------- | ----------- |
+    /// | `00` | +ve, finite |    finite   |
+    /// | `01` | −ve, finite |    finite   |
+    /// | `10` | +ve, finite |      ∞      |
+    /// | `11` | −ve, finite |      ∞      |
+    /// | `30` | +ve, finite |    `NaN`    |
+    /// | `31` | −ve, finite |    `NaN`    |
+    /// | `70` |     +∞      |    `NaN`    |
+    /// | `71` |     −∞      |    `NaN`    |
+    /// | `Fx` |    `NaN`    |    `NaN`    |
+    ///
+    /// [`SciDecimal::NAN`] is defined with `flags: 0xFF` and zeros for all other fields.
+    pub(crate) flags: u8,
 }
 
 /// Identity-related constants.
@@ -48,39 +81,27 @@ impl SciDecimal {
 
     /// The lowest supported number.
     pub const MIN: SciDecimal = SciDecimal {
-        uncertainty: 0,
-        uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
-        exponent: 0,
         significand: u64::MAX,
+        uncertainty: 0,
+        exponent: 0,
+        uncertainty_scale: 0,
+        flags: 0x01,
     };
 
     /// The smallest supported positive number.
     pub const MIN_POSITIVE: SciDecimal = SciDecimal {
-        uncertainty: 0,
-        uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: false,
-        exponent: i16::MIN,
         significand: 1,
+        uncertainty: 0,
+        exponent: i16::MIN,
+        uncertainty_scale: 0,
+        flags: 0x00,
     };
 
     /// The highest supported number.
     pub const MAX: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: false,
+        flags: 0x00,
         exponent: i16::MAX,
         significand: u64::MAX,
     };
@@ -89,11 +110,7 @@ impl SciDecimal {
     pub const NAN: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: true,
-        inf: false,
-        negative: false,
+        flags: 0xFF,
         exponent: 0,
         significand: 0,
     };
@@ -102,11 +119,7 @@ impl SciDecimal {
     pub const INFINITY: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: true,
-        negative: false,
+        flags: 0x70,
         exponent: 0,
         significand: 0,
     };
@@ -115,11 +128,7 @@ impl SciDecimal {
     pub const NEG_INFINITY: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: true,
-        negative: true,
+        flags: 0x71,
         exponent: 0,
         significand: 0,
     };
@@ -128,11 +137,7 @@ impl SciDecimal {
     pub const ZERO: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: false,
+        flags: 0x00,
         exponent: 0,
         significand: 0,
     };
@@ -141,14 +146,129 @@ impl SciDecimal {
     pub const NEG_ZERO: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
+        flags: 0x01,
         exponent: 0,
         significand: 0,
     };
+}
+
+/// Methods for obtaining parts of the contained data.
+impl SciDecimal {
+    /// Returns the `NaN` bit; `true` means the `SciDecimal` must be a `NaN`.
+    #[inline]
+    pub(crate) fn nan_bit(&self) -> bool {
+        self.flags & 0x80 != 0
+    }
+
+    /// Returns the infinity bit; `true` means the `SciDecimal` is either +∞, −∞, or
+    /// a `NaN`.
+    #[inline]
+    pub(crate) fn inf_bit(&self) -> bool {
+        self.flags & 0x30 != 0
+    }
+
+    /// Returns the sign bit; `true` means the `SciDecimal` is negative (unless it is a
+    /// `NaN`).
+    ///
+    /// Corresponds to _s_ in the representation of the number as
+    /// (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
+    ///
+    /// Note that the current stored value of the sign bit is returned even when
+    /// the number is a `NaN` (and the value of the sign therefore moot).
+    #[inline]
+    pub fn sign_bit(&self) -> bool {
+        (self.flags & 0x01) != 0
+    }
+
+    /// Returns the unsigned significand _m_ of the number when represented with
+    /// _m_ as an integer.
+    ///
+    /// Corresponds to _m_ in the representation of the number as
+    /// (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
+    ///
+    /// Note that the current stored value of the significand is returned even
+    /// when the number is not finite (and the value of the significand therefore
+    /// moot).
+    #[inline]
+    pub fn significand(&self) -> u64 {
+        self.significand
+    }
+
+    /// Returns the signed significand _m_ of the number when represented with
+    /// _m_ as an integer.
+    ///
+    /// Corresponds to (−1)<sup>_s_</sup> × _m_ in the representation
+    /// of the number as (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
+    ///
+    /// Note that the current stored value of the significand is returned even
+    /// when the number is not finite (and the value of the significand therefore
+    /// moot).
+    #[inline]
+    pub fn signed_significand(&self) -> i64 {
+        if self.sign_bit() {
+            -(self.significand as i64)
+        } else {
+            self.significand as i64
+        }
+    }
+
+    /// Returns the exponent _n_ of the number when represented with _m_ as an
+    /// integer.
+    ///
+    /// Corresponds to `n` in the representation of the number
+    /// as (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
+    ///
+    /// Note that the current stored value of the exponent is returned even when
+    /// the number is not finite (and the value of the exponent therefore moot).
+    #[inline]
+    pub fn exponent(&self) -> i16 {
+        self.exponent
+    }
+
+    /// Returns the integer part, number of fractional leading zeros,
+    /// fractional part, uncertainty, and exponent of the number when represented
+    /// with normalized notation i.e. with 10 > _m_ >= 1.
+    ///
+    /// Corresponds to _i_, _z_, _f_, _u_, _n_ when the number is notated as
+    /// `ii.{zeros}fff(uu)` × 10<sup>`nn`</sup>, where `z` is the number of leading
+    /// zeros in the fractional part.
+    ///
+    /// # Special values
+    ///
+    /// Unlike `significand()`, `sign()`, and `exponent()`, this method does not
+    /// just return the stored values in all cases.
+    ///
+    /// - ±0 → `Some((0, 0, 0, 0, 0))`
+    ///
+    /// - ±∞ and `NaN` → `None`
+    pub fn scientific_parts(&self) -> Option<(i8, u8, u64, u32, i16)> {
+        if self.is_zero() {
+            return Some((0, 0, 0, 0, 0));
+        };
+        if !self.is_finite() {
+            todo!("Special values are not yet handled correctly by this method!")
+        }
+        let figs = self.sf() as u32;
+        let int_unsigned = self.significand / 10_u64.pow(figs - 1); // First digit
+        let int = if self.sign_bit() {
+            -(int_unsigned as i8)
+        } else {
+            int_unsigned as i8
+        };
+        let frac = self.significand % 10_u64.pow(figs - 1);
+        // Work out how many zeros have been dropped, if any
+        let figs_in_frac = frac.checked_ilog10().map_or(0, |x| x + 1);
+        let zeros = (figs - 1 - figs_in_frac) as u8; // 1 is for integer digit
+        let uncert = self.uncertainty;
+        let exp = self.exponent + (figs as i16 - 1);
+        // For example:
+        // 1.23e2 = 123 is stored as (123, 0)       =>  2 =  0 + (3 - 1)
+        // 4.5e6 = 4_500_000 is stored as (45, 5)   =>  6 =  5 + (2 - 1)
+        // 4.5e-3 = 0.0045 is stored as (45, -4)    => -3 = -4 + (2 - 1)
+        // 4.51e-3 = 0.00451 is stored as (451, -5) => -3 = -5 + (3 - 1)
+        // 4.50e-3 = 0.00450 is stored as (450, -5) => -3 = -5 + (3 - 1)
+        Some((int, zeros, frac, uncert, exp))
+    }
 }
 
 /// Associated constructor functions.
@@ -176,11 +296,7 @@ impl SciDecimal {
         Self {
             uncertainty: 0,
             uncertainty_scale: 0,
-            uncertainty_nan: false,
-            uncertainty_inf: false,
-            nan: false,
-            inf: false,
-            negative: number.is_negative(),
+            flags: number.is_negative() as u8,
             exponent,
             significand: number.unsigned_abs(),
         }
@@ -213,11 +329,7 @@ impl SciDecimal {
         Self {
             uncertainty,
             uncertainty_scale: 0,
-            uncertainty_nan: false,
-            uncertainty_inf: false,
-            nan: false,
-            inf: false,
-            negative: number.is_negative(),
+            flags: number.is_negative() as u8,
             exponent,
             significand: number.unsigned_abs(),
         }
@@ -297,119 +409,79 @@ impl SciDecimal {
         Self {
             uncertainty,
             uncertainty_scale: 0,
-            uncertainty_nan: false,
-            uncertainty_inf: false,
-            nan: false,
-            inf: false,
-            negative: integer.is_negative(),
+            flags: integer.is_negative() as u8,
             exponent,
             significand,
         }
     }
 }
 
-/// Methods for obtaining parts of the contained data.
+/// Methods testing predicates that aren't part of trait implementations.
 impl SciDecimal {
-    /// Returns the integer part, number of fractional leading zeros,
-    /// fractional part, uncertainty, and exponent of the number when represented
-    /// with normalized notation i.e. with 10 > _m_ >= 1.
-    ///
-    /// Corresponds to _i_, _z_, _f_, _u_, _n_ when the number is notated as
-    /// `ii.{zeros}fff(uu)` × 10<sup>`nn`</sup>, where `z` is the number of leading
-    /// zeros in the fractional part.
-    ///
-    /// # Special values
-    ///
-    /// Unlike `significand()`, `sign()`, and `exponent()`, this method does not
-    /// just return the stored values in all cases.
-    ///
-    /// - ±0 → `Some((0, 0, 0, 0, 0))`
-    ///
-    /// - ±∞ and `NaN` → `None`
-    pub fn scientific_parts(&self) -> Option<(i8, u8, u64, u32, i16)> {
-        if self.is_zero() {
-            return Some((0, 0, 0, 0, 0));
-        };
-        if !self.is_finite() {
-            todo!("Special values are not yet handled correctly by this method!")
-        }
-        let figs = self.sf() as u32;
-        let int_unsigned = self.significand / 10_u64.pow(figs - 1); // First digit
-        let int = if self.negative {
-            -(int_unsigned as i8)
-        } else {
-            int_unsigned as i8
-        };
-        let frac = self.significand % 10_u64.pow(figs - 1);
-        // Work out how many zeros have been dropped, if any
-        let figs_in_frac = frac.checked_ilog10().map_or(0, |x| x + 1);
-        let zeros = (figs - 1 - figs_in_frac) as u8; // 1 is for integer digit
-        let uncert = self.uncertainty;
-        let exp = self.exponent + (figs as i16 - 1);
-        // For example:
-        // 1.23e2 = 123 is stored as (123, 0)       =>  2 =  0 + (3 - 1)
-        // 4.5e6 = 4_500_000 is stored as (45, 5)   =>  6 =  5 + (2 - 1)
-        // 4.5e-3 = 0.0045 is stored as (45, -4)    => -3 = -4 + (2 - 1)
-        // 4.51e-3 = 0.00451 is stored as (451, -5) => -3 = -5 + (3 - 1)
-        // 4.50e-3 = 0.00450 is stored as (450, -5) => -3 = -5 + (3 - 1)
-        Some((int, zeros, frac, uncert, exp))
+    /// Returns `true` if the uncertainty is `NaN` and `false` otherwise.
+    #[inline]
+    pub fn uncertainty_is_nan(self) -> bool {
+        self.flags & 0x20 != 0
     }
 
-    /// Returns the signed significand _m_ of the number when represented with
-    /// _m_ as an integer.
-    ///
-    /// Corresponds to (−1)<sup>_s_</sup> × _m_ in the actual in-memory representation
-    /// of the number as (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
-    ///
-    /// Note that the current stored value of the significand is returned even
-    /// when the number is not normal (and the value of the significand therefore
-    /// moot).
+    /// Returns `true` if the uncertainty is (positive) infinity and `false` otherwise.
     #[inline]
-    pub fn significand_signed(&self) -> i64 {
-        if self.negative {
-            -(self.significand as i64)
-        } else {
-            self.significand as i64
-        }
+    pub fn uncertainty_is_infinite(self) -> bool {
+        // The NaN flag overrides the infinity flag, and the NaN and inf flags of the
+        // number as a whole override the uncertainty's flags
+        // We therefore have to compare against four bits - if any except bit 4 are 1,
+        // the uncertainty is not infinite, it's NaN
+        self.flags & 0xF0 == 0x10
     }
 
-    /// Returns the unsigned significand _m_ of the number when represented with
-    /// _m_ as an integer.
-    ///
-    /// Corresponds to _m_ in the actual in-memory representation
-    /// of the number as (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
-    ///
-    /// Note that the current stored value of the significand is returned even
-    /// when the number is not normal (and the value of the significand therefore
-    /// moot).
+    /// Returns `true` if the uncertainty is neither infinite nor `NaN`.
     #[inline]
-    pub fn significand(&self) -> u64 {
-        self.significand
+    pub fn uncertainty_is_finite(self) -> bool {
+        self.flags & 0xF0 == 0
     }
 
-    /// Returns the sign bit; `true` means the `SciDecimal` is negative.
-    ///
-    /// Corresponds to _s_ in the actual in-memory representation
-    /// of the number as (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
-    ///
-    /// Note that the current stored value of the sign bit is returned even when
-    /// the number is not normal (and the value of the sign therefore moot).
+    /// Returns `true` if the uncertainty is neither zero, infinite, or `NaN`.
     #[inline]
-    pub fn sign(&self) -> bool {
-        self.negative
+    pub fn uncertainty_is_normal(self) -> bool {
+        self.uncertainty_is_finite() && self.uncertainty != 0
+    }
+}
+
+/// Methods for setting flag patterns.
+impl SciDecimal {
+    #[inline]
+    pub(crate) fn set_nan(&mut self) {
+        // Bits 4-7 must be 1, that's an invariant we commit to
+        // We could set the whole byte to 1s to match `SciDecimal::NAN`, but no need
+        self.flags = self.flags | 0xF0
     }
 
-    /// Returns the exponent _n_ of the number when represented with _m_ as an
-    /// integer.
-    ///
-    /// Corresponds to `n` in the actual in-memory representation of the number
-    /// as (−1)<sup>_s_</sup> × _m_ × 10<sup>_n_</sup>`.
-    ///
-    /// Note that the current stored value of the exponent is returned even when
-    /// the number is not normal (and the value of the exponent therefore moot).
     #[inline]
-    pub fn exponent(&self) -> i16 {
-        self.exponent
+    pub(crate) fn set_inf(&mut self) {
+        // Uncertainty must be NaN whenever the number is infinity - that's an invariant
+        // we commit to
+        self.flags = self.flags | 0x70
+    }
+
+    #[inline]
+    pub(crate) fn set_uncertainty_nan(&mut self) {
+        // Bit 4 must also be 1 when the uncertainty is NaN, that's an invariant
+        self.flags = self.flags | 0x30
+    }
+
+    #[inline]
+    pub(crate) fn set_uncertainty_inf(&mut self) {
+        self.flags = self.flags | 0x10
+    }
+
+    #[inline]
+    pub(crate) fn set_neg(&mut self) {
+        self.flags = self.flags | 0x01
+    }
+
+    #[inline]
+    pub(crate) fn set_pos(&mut self) {
+        self.flags = self.flags & !0x01
     }
 }
 
@@ -556,11 +628,7 @@ impl SciNum for SciDecimal {
     const ONE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: false,
+        flags: 0x00,
         exponent: 0,
         significand: 1,
     };
@@ -570,8 +638,8 @@ impl SciNum for SciDecimal {
         Self {
             uncertainty: 0,
             uncertainty_scale: 0,
-            uncertainty_nan: false,
-            uncertainty_inf: false,
+            // Set uncertainty inf/NaN flags to same as number itself
+            flags: (self.flags & !0x30) | ((self.flags & 0xC0) >> 2),
             ..*self
         }
     }
@@ -589,24 +657,15 @@ impl SciNum for SciDecimal {
     /// - `NaN` → `NaN`
     #[inline]
     fn uncertainty(&self) -> Self {
-        if self.nan {
+        if self.uncertainty_is_nan() {
             Self::NAN
-        } else if self.inf {
-            // TODO Should the uncertainty of ∞ be ∞ or NaN?
-            Self::INFINITY
-        } else if self.uncertainty_nan {
-            Self::NAN
-        } else if self.uncertainty_inf {
+        } else if self.uncertainty_is_infinite() {
             Self::INFINITY
         } else {
             Self {
                 uncertainty: 0,
                 uncertainty_scale: 0,
-                uncertainty_nan: false,
-                uncertainty_inf: false,
-                nan: false,
-                inf: false,
-                negative: false,
+                flags: 0x00,
                 exponent: self.exponent + self.uncertainty_scale as i16,
                 significand: self.uncertainty.into(),
             }
@@ -646,9 +705,9 @@ impl SciNum for SciDecimal {
     #[inline]
     fn with_uncertainty(mut self, uncertainty: Self) -> Self {
         if uncertainty.is_nan() {
-            self.uncertainty_nan = true;
+            self.set_uncertainty_nan();
         } else if uncertainty.is_infinite() {
-            self.uncertainty_inf = true;
+            self.set_uncertainty_inf();
         } else {
             let narrowed_uncertainty = if uncertainty.significand > u32::MAX.into() {
                 uncertainty.trunc_sf(9);
@@ -682,7 +741,7 @@ impl SciNum for SciDecimal {
     fn is_exact(&self) -> bool {
         // We could just do self.uncertainty().is_zero() but faster if we avoid
         // creating a new SciDecimal
-        if self.nan | self.inf {
+        if self.is_nan() | self.inf_bit() {
             false
         } else {
             self.uncertainty == 0
@@ -819,12 +878,12 @@ impl SciNum for SciDecimal {
                     RoundingMode::Up => new_sig += 1,
                     RoundingMode::Down => {}
                     RoundingMode::Ceiling => {
-                        if !new.negative {
+                        if !new.sign_bit() {
                             new_sig += 1
                         }
                     }
                     RoundingMode::Floor => {
-                        if new.negative {
+                        if new.sign_bit() {
                             new_sig += 1
                         }
                     }
@@ -938,7 +997,7 @@ impl Zero for SciDecimal {
     /// uncertainty.
     #[inline]
     fn is_zero(&self) -> bool {
-        if self.nan | self.inf {
+        if self.is_nan() | self.inf_bit() {
             false
         } else {
             self.significand == 0
@@ -961,11 +1020,7 @@ impl SciDecimal {
     pub const TWO: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: false,
+        flags: 0x00,
         exponent: 0,
         significand: 2,
     };
@@ -973,11 +1028,7 @@ impl SciDecimal {
     pub const NEG_ONE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
+        flags: 0x01,
         exponent: 0,
         significand: 1,
     };
@@ -986,11 +1037,7 @@ impl SciDecimal {
     pub const PI: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
+        flags: 0x01,
         exponent: -15,
         significand: 3_141_592_653_589_793,
     };
@@ -999,11 +1046,7 @@ impl SciDecimal {
     pub(crate) const PI_PRECISE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
+        flags: 0x01,
         exponent: -18,
         significand: 3_141_592_653_589_793_238,
     };
@@ -1012,11 +1055,7 @@ impl SciDecimal {
     pub const E: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
+        flags: 0x01,
         exponent: -15,
         significand: 2_718_281_828_459_045,
     };
@@ -1025,11 +1064,7 @@ impl SciDecimal {
     pub(crate) const E_PRECISE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
+        flags: 0x01,
         exponent: -15,
         significand: 2_718_281_828_459_045_235,
     };
@@ -1038,11 +1073,7 @@ impl SciDecimal {
     pub const LN_2: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
+        flags: 0x01,
         exponent: -16,
         significand: 693_147_180_559_945_3,
     };
@@ -1051,11 +1082,7 @@ impl SciDecimal {
     pub(crate) const LN_2_PRECISE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
+        flags: 0x01,
         exponent: -19,
         significand: 693_147_180_559_945_309_4,
     };
@@ -1064,11 +1091,7 @@ impl SciDecimal {
     pub const LN_10: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
+        flags: 0x01,
         exponent: -15,
         significand: 2_302_585_092_994_046,
     };
@@ -1077,11 +1100,7 @@ impl SciDecimal {
     pub(crate) const LN_10_PRECISE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
+        flags: 0x01,
         exponent: -18,
         significand: 2_302_585_092_994_045_684,
     };
@@ -1090,11 +1109,7 @@ impl SciDecimal {
     pub const LOG2_E: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
+        flags: 0x01,
         exponent: -15,
         significand: 1_442_695_040_888_963,
     };
@@ -1103,11 +1118,7 @@ impl SciDecimal {
     pub(crate) const LOG2_E_PRECISE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
+        flags: 0x01,
         exponent: -18,
         significand: 1_442_695_040_888_963_407,
     };
@@ -1116,11 +1127,7 @@ impl SciDecimal {
     pub const LOG2_10: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
+        flags: 0x01,
         exponent: -15,
         significand: 3_321_928_094_887_362,
     };
@@ -1129,11 +1136,7 @@ impl SciDecimal {
     pub(crate) const LOG2_10_PRECISE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
+        flags: 0x01,
         exponent: -18,
         significand: 3_321_928_094_887_362_348,
     };
@@ -1142,11 +1145,7 @@ impl SciDecimal {
     pub const LOG10_2: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
+        flags: 0x01,
         exponent: -16,
         significand: 301_029_995_663_981_2,
     };
@@ -1155,11 +1154,7 @@ impl SciDecimal {
     pub(crate) const LOG10_2_PRECISE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
+        flags: 0x01,
         exponent: -19,
         significand: 301_029_995_663_981_195_2,
     };
@@ -1168,11 +1163,7 @@ impl SciDecimal {
     pub const LOG10_E: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
+        flags: 0x01,
         exponent: -16,
         significand: 434_294_481_903_251_8,
     };
@@ -1181,11 +1172,7 @@ impl SciDecimal {
     pub(crate) const LOG10_E_PRECISE: SciDecimal = SciDecimal {
         uncertainty: 0,
         uncertainty_scale: 0,
-        uncertainty_nan: false,
-        uncertainty_inf: false,
-        nan: false,
-        inf: false,
-        negative: true,
+        flags: 0x01,
         exponent: -19,
         significand: 434_294_481_903_251_827_7,
     };
@@ -1203,50 +1190,42 @@ mod tests {
     fn new_exact() {
         // Small positive integer
         let n = SciDecimal::new(4, 0); // 4
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 4);
         assert_eq!(n.exponent, 0);
-        assert!(!n.nan);
-        assert!(!n.inf);
         assert_eq!(n.uncertainty, 0);
         assert_eq!(n.uncertainty_scale, 0);
-        assert!(!n.uncertainty_nan);
-        assert!(!n.uncertainty_inf);
         // Small negative integer
         // Negative integer input stored as unsigned significand and a sign bit
         let n = SciDecimal::new(-3, 0); // -3
-        assert!(n.negative);
+        assert_eq!(n.flags, 1);
         assert_eq!(n.significand, 3);
         assert_eq!(n.exponent, 0);
-        assert!(!n.nan);
-        assert!(!n.inf);
         assert_eq!(n.uncertainty, 0);
         assert_eq!(n.uncertainty_scale, 0);
-        assert!(!n.uncertainty_nan);
-        assert!(!n.uncertainty_inf);
         // Positive number where not all digits are significant
         let n = SciDecimal::new(30, 3); // 30e3 = 30_000 (with only 2 sf)
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 30);
         assert_eq!(n.exponent, 3);
         // Positive fractional number between 0 and 1
         let n = SciDecimal::new(456, -3); // 0.456
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 456);
         assert_eq!(n.exponent, -3);
         // As above but negative
         let n = SciDecimal::new(-456, -3); // -0.456
-        assert!(n.negative);
+        assert_eq!(n.flags, 1);
         assert_eq!(n.significand, 456);
         assert_eq!(n.exponent, -3);
         // Positive fractional number greater than 1
         let n = SciDecimal::new(123456, -4); // 12.3456
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 123456);
         assert_eq!(n.exponent, -4);
         // As above but negative
         let n = SciDecimal::new(-123456, -4); // -12.3456
-        assert!(n.negative);
+        assert_eq!(n.flags, 1);
         assert_eq!(n.significand, 123456);
         assert_eq!(n.exponent, -4);
         // Numbers with largest allowed significand is fine
@@ -1255,53 +1234,45 @@ mod tests {
         assert_eq!(max_pos_sig, SciDecimal::MAX_SIGNIFICAND_SIGNED);
         assert_eq!(max_pos_sig as u64, SciDecimal::MAX_SIGNIFICAND);
         let n = SciDecimal::new(max_pos_sig, 0);
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 9_999_999_999_999_999);
         assert_eq!(n.exponent, 0);
         let n = SciDecimal::new(max_pos_sig, 42);
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 9_999_999_999_999_999);
         assert_eq!(n.exponent, 42);
         let n = SciDecimal::new(max_pos_sig, -42);
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 9_999_999_999_999_999);
         assert_eq!(n.exponent, -42);
         let max_neg_sig = -max_pos_sig;
         assert_eq!(max_neg_sig, SciDecimal::MIN_SIGNIFICAND_SIGNED);
         assert!(max_neg_sig.is_negative());
         let n = SciDecimal::new(max_neg_sig, 0);
-        assert!(n.negative);
+        assert_eq!(n.flags, 1);
         assert_eq!(n.significand, 9_999_999_999_999_999);
         assert_eq!(n.exponent, 0);
         let n = SciDecimal::new(max_neg_sig, 42);
-        assert!(n.negative);
+        assert_eq!(n.flags, 1);
         assert_eq!(n.significand, 9_999_999_999_999_999);
         assert_eq!(n.exponent, 42);
         let n = SciDecimal::new(max_neg_sig, -42);
-        assert!(n.negative);
+        assert_eq!(n.flags, 1);
         assert_eq!(n.significand, 9_999_999_999_999_999);
         assert_eq!(n.exponent, -42);
         // Largest/smallest significand and exponent are fine (and finite)
         let n = SciDecimal::new(max_pos_sig, i16::MAX);
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 9_999_999_999_999_999);
         assert_eq!(n.exponent, i16::MAX);
-        assert!(!n.nan);
-        assert!(!n.inf);
         assert_eq!(n.uncertainty, 0);
         assert_eq!(n.uncertainty_scale, 0);
-        assert!(!n.uncertainty_nan);
-        assert!(!n.uncertainty_inf);
         let n = SciDecimal::new(max_neg_sig, i16::MIN);
-        assert!(n.negative);
+        assert_eq!(n.flags, 1);
         assert_eq!(n.significand, 9_999_999_999_999_999);
         assert_eq!(n.exponent, i16::MIN);
-        assert!(!n.nan);
-        assert!(!n.inf);
         assert_eq!(n.uncertainty, 0);
         assert_eq!(n.uncertainty_scale, 0);
-        assert!(!n.uncertainty_nan);
-        assert!(!n.uncertainty_inf);
     }
 
     #[test]
@@ -1322,69 +1293,57 @@ mod tests {
     fn new_with_uncertainty() {
         // Small positive integer, exact but created using new_with_uncertainty()
         let n = SciDecimal::new_with_uncertainty(4, 0, 0); // 4
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 4);
         assert_eq!(n.exponent, 0);
-        assert!(!n.nan);
-        assert!(!n.inf);
         assert_eq!(n.uncertainty, 0);
         assert_eq!(n.uncertainty_scale, 0);
-        assert!(!n.uncertainty_nan);
-        assert!(!n.uncertainty_inf);
         // Small positive integer
         let n = SciDecimal::new_with_uncertainty(4, 2, 0); // 4 ± 2
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 4);
         assert_eq!(n.exponent, 0);
-        assert!(!n.nan);
-        assert!(!n.inf);
         assert_eq!(n.uncertainty, 2);
         assert_eq!(n.uncertainty_scale, 0);
-        assert!(!n.uncertainty_nan);
-        assert!(!n.uncertainty_inf);
         // Small negative integer, uncertainty stored unsigned
         // Negative integer input stored as unsigned significand and a sign bit
         let n = SciDecimal::new_with_uncertainty(-3, 1, 0); // −3 ± 1
-        assert!(n.negative);
+        assert_eq!(n.flags, 1);
         assert_eq!(n.significand, 3);
         assert_eq!(n.exponent, 0);
-        assert!(!n.nan);
-        assert!(!n.inf);
         assert_eq!(n.uncertainty, 1);
         assert_eq!(n.uncertainty_scale, 0);
-        assert!(!n.uncertainty_nan);
-        assert!(!n.uncertainty_inf);
         // Positive number where not all digits are significant
         let n = SciDecimal::new_with_uncertainty(30, 4, 3); // 30(4)e3 = 30_000 (with only 2 sf) ± 4_000
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 30);
         assert_eq!(n.exponent, 3);
         assert_eq!(n.uncertainty, 4);
         assert_eq!(n.uncertainty_scale, 0);
         // Uncertainty bigger than the actual value
         let n = SciDecimal::new_with_uncertainty(-45, 67, -1); // −4.5 ± 6.7
-        assert!(n.negative);
+        assert_eq!(n.flags, 1);
         assert_eq!(n.significand, 45);
         assert_eq!(n.exponent, -1);
         assert_eq!(n.uncertainty, 67);
         assert_eq!(n.uncertainty_scale, 0);
         // Positive fractional number between 0 and 1
         let n = SciDecimal::new_with_uncertainty(456, 3, -3); // 0.456 ± 0.003
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 456);
         assert_eq!(n.exponent, -3);
         assert_eq!(n.uncertainty, 3);
         assert_eq!(n.uncertainty_scale, 0);
         // As above but negative and uncertainty with 2 sf
         let n = SciDecimal::new_with_uncertainty(-456, 32, -3); // -0.456 ± 0.032
-        assert!(n.negative);
+        assert_eq!(n.flags, 1);
         assert_eq!(n.significand, 456);
         assert_eq!(n.exponent, -3);
         assert_eq!(n.uncertainty, 32);
         assert_eq!(n.uncertainty_scale, 0);
         // Positive fractional number greater than 1
         let n = SciDecimal::new_with_uncertainty(123456, 5, -4); // 12.3456 ± 0.0005
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 123456);
         assert_eq!(n.exponent, -4);
         assert_eq!(n.uncertainty, 5);
@@ -1392,14 +1351,14 @@ mod tests {
         // Largest allowed significand is fine even though the significand + the
         // uncertainty would overflow
         let n = SciDecimal::new_with_uncertainty(SciDecimal::MAX_SIGNIFICAND_SIGNED, 5, 0);
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 9_999_999_999_999_999);
         assert_eq!(n.exponent, 0);
         assert_eq!(n.uncertainty, 5);
         assert_eq!(n.uncertainty_scale, 0);
         // Largest allowed uncertainty significand is also fine
         let n = SciDecimal::new_with_uncertainty(SciDecimal::MAX_SIGNIFICAND_SIGNED, u32::MAX, 42);
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 9_999_999_999_999_999);
         assert_eq!(n.exponent, 42);
         assert_eq!(n.uncertainty, 4294967295);
@@ -1409,7 +1368,7 @@ mod tests {
             u32::MAX,
             i16::MIN,
         );
-        assert!(n.negative);
+        assert_eq!(n.flags, 1);
         assert_eq!(n.significand, 9_999_999_999_999_999);
         assert_eq!(n.exponent, -32768);
         assert_eq!(n.uncertainty, 4294967295);
@@ -1419,7 +1378,7 @@ mod tests {
             u32::MAX,
             i16::MAX,
         );
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 9_999_999_999_999_999);
         assert_eq!(n.exponent, 32767);
         assert_eq!(n.uncertainty, 4294967295);
@@ -1429,53 +1388,53 @@ mod tests {
     #[test]
     fn from_scientific_parts() {
         let n = SciDecimal::from_scientific_parts(3, 0, 0, 0, 0); // 3
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 3);
         assert_eq!(n.exponent, 0);
         assert_eq!(n.uncertainty, 0);
         assert_eq!(n.uncertainty_scale, 0);
         let n = SciDecimal::from_scientific_parts(-3, 0, 0, 0, 0); // -3
-        assert!(n.negative);
+        assert_eq!(n.flags, 1);
         assert_eq!(n.significand, 3);
         assert_eq!(n.exponent, 0);
         assert_eq!(n.uncertainty, 0);
         assert_eq!(n.uncertainty_scale, 0);
         let n = SciDecimal::from_scientific_parts(3, 0, 0, 1, 0); // 3.0
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 30);
         assert_eq!(n.exponent, -1);
         assert_eq!(n.uncertainty, 0);
         assert_eq!(n.uncertainty_scale, 0);
         let n = SciDecimal::from_scientific_parts(3, 00, 0, 2, 0); // 3.00
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 300);
         assert_eq!(n.exponent, -2);
         assert_eq!(n.uncertainty, 0);
         assert_eq!(n.uncertainty_scale, 0);
         let n = SciDecimal::from_scientific_parts(6, 72, 0, 2, 0); // 6.72e0
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 672);
         assert_eq!(n.exponent, -2);
         // Specifying `places` as a number less than the actual number of figures in
         // `fraction` leads to surprising, but entirely predictable results
         let n = SciDecimal::from_scientific_parts(6, 72, 0, 0, 0); // (6+72)e0 = 78e0
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 78);
         assert_eq!(n.exponent, 0);
         let n = SciDecimal::from_scientific_parts(-2, 036, 0, 3, 5); // -2.036e5
-        assert!(n.negative);
+        assert_eq!(n.flags, 1);
         assert_eq!(n.significand, 2036);
         assert_eq!(n.exponent, 2);
         // Uncertainty to 1 sf
         let n = SciDecimal::from_scientific_parts(2, 161, 9, 3, -7); // 2.161(9)e-7
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 2161);
         assert_eq!(n.exponent, -10);
         assert_eq!(n.uncertainty, 9);
         assert_eq!(n.uncertainty_scale, 0);
         // Uncertainty to 2 sf
         let n = SciDecimal::from_scientific_parts(2, 1613, 92, 4, -7); // 2.1613(92)e-7
-        assert!(!n.negative);
+        assert_eq!(n.flags, 0);
         assert_eq!(n.significand, 21613);
         assert_eq!(n.exponent, -11);
         assert_eq!(n.uncertainty, 92);
@@ -1525,8 +1484,8 @@ mod tests {
         // Important to check this not just with the `NAN` const but also to
         // confirm that the different flag bits override each other in the
         // expected way.
-        // Any `SciDecimal` with `self.nan == true` should be considered a NaN,
-        // even if `self.inf` is `true`, so there are 2^127 different NaNs.
+        // Any `SciDecimal` with `self.is_nan() == true` should be considered a NaN,
+        // even if `self.inf_bit()` is `true`, so there are 2^127 different NaNs.
         // It is important that none of them are ever treated as a normal number,
         // or as an infinity, or as negative, etc.
         for nan in [
@@ -1580,8 +1539,8 @@ mod tests {
 
     #[test]
     fn infinities() {
-        // Similarly, any `SciDecimal` that has `self.inf == true` is an infinity
-        // (*unless it also has `self.nan == true`*, see above), and thus there
+        // Similarly, any `SciDecimal` that has `self.inf_bit() == true` is an infinity
+        // (*unless it also has `self.is_nan() == true`*, see above), and thus there
         // are also 2^126 different infinities…
         for (inf, ninf) in [
             (SciDecimal::INFINITY, SciDecimal::NEG_INFINITY),
