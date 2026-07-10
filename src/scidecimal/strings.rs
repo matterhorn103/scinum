@@ -4,16 +4,16 @@ use core::fmt;
 use std::str::FromStr;
 
 use bigdecimal::BigDecimal;
-use num_traits::{Float, Num, Zero};
+use num_traits::{Num, Zero};
 use regex::Regex;
 
 use crate::{RoundingMode, SciDecimal, SciNum, SciNumError, scicast::SciCast};
 
-impl SciDecimal {
-    pub fn to_plain_string(&self) -> String {
+impl fmt::Display for SciDecimal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Handle NaN
         if self.is_nan() {
-            return String::from("NaN");
+            return write!(f, "NaN");
         }
         // Get sign character
         let sign = if self.sign_bit() {
@@ -23,13 +23,13 @@ impl SciDecimal {
         };
         // Handle infinities
         if self.inf_bit() {
-            return format!("{sign}inf");
+            return write!(f, "{sign}inf");
         }
         // Handle zeros
         if self.is_zero() {
             // TODO Have this display the uncertainty properly once they can be
             // displayed with +/-
-            return format!("{}0", sign);
+            return write!(f, "{}0", sign);
         }
         let significand = self.significand;
         let uncertainty = if self.is_exact() {
@@ -47,7 +47,7 @@ impl SciDecimal {
             } else {
                 uncertainty
             };
-            format!("{sign}{significand}{zeros}{uncertainty}")
+            write!(f, "{sign}{significand}{zeros}{uncertainty}")
         // Numbers with both integral and fractional parts
         } else if self.precision_most_significant_fig() >= 0 {
             // 3.1 has precision = -1, sigfigs = 2
@@ -56,17 +56,19 @@ impl SciDecimal {
             let int_figs = self.sf() as u16 - self.precision().unsigned_abs();
             let mut int = significand.to_string();
             let frac = int.split_off(int_figs.into());
-            format!("{sign}{int}.{frac}{uncertainty}")
+            write!(f, "{sign}{int}.{frac}{uncertainty}")
         // Numbers with only a fractional part
         } else {
             // 0.005 needs to have two zeros, precision = -3, sigfigs = 1
             let zeros = // (-3).abs() - 1 = 2
                 "0".repeat((self.precision().unsigned_abs() - self.sf() as u16).into());
-            format!("{sign}0.{zeros}{significand}{uncertainty}")
+            write!(f, "{sign}0.{zeros}{significand}{uncertainty}")
         }
     }
+}
 
-    pub fn to_scientific_string(&self) -> String {
+impl SciDecimal {
+    pub fn to_scientific(&self) -> String {
         // Handle NaN
         if self.is_nan() {
             return String::from("NaN");
@@ -95,29 +97,46 @@ impl SciDecimal {
             format!("{int}.{frac:p$}{uncertainty}e{exp}")
         }
     }
-}
 
-impl fmt::Display for SciDecimal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Numbers with up to five places either side of the decimal point should
-        // be displayed using normal notation:
-        // - 0.0325 = 3.25e-2 = (325, -4) => "0.0325"
-        // - 85.130 = 8.5130e1 = (85130, -3) => "85.130"
-        // If this is exceeded, display in scientific notation:
-        // - 0.000325 = 3.25e-4 = (325, -6) => "3.25e-4"
-        // - 8174036 = 8.174036e6 = (8174036, 0) => "8.174036e6"
-        // Scientific notation should also be used if there are insignificant zeros
-        // before the decimal point, so that the precision is indicated:
-        // - 81700 with 3 sf = 8.17e4 = (817, 2) => "8.17e4"
-        // - 81700 with 5 sf = 8.1700e4 = (81700, 0) => "81700"
+    /// Formats the number using the given formatter, deciding intelligently whether to
+    /// use positional or scientific notation.
+    ///
+    /// Numbers with up to five places either side of the decimal point are
+    /// displayed using simple positional notation.
+    /// If this would be exceeded, the number is displayed in scientific notation.
+    ///
+    /// However, scientific notation is also used if the positional notation would
+    /// result in insignificant zeros being shown explicitly before the decimal point,
+    /// erroneously implying a greater number of significant figures than the number
+    /// possesses. In this way the actual precision of the number is always shown.
+    ///
+    /// /// # Example
+    ///
+    /// ```
+    /// # use scinum::SciDecimal;
+    /// #
+    /// assert_eq!(SciDecimal::new(325, -4).to_string_smart(), "0.0325");
+    /// assert_eq!(SciDecimal::new(85130, -3).to_string_smart(), "85.130");
+    /// assert_eq!(SciDecimal::new(325, -6).to_string_smart(), "3.25e-4");
+    /// assert_eq!(
+    ///     SciDecimal::from_scientific_parts(3, 25, 0, 2, -4).to_string_smart(),
+    ///     "3.25e-4",
+    /// );
+    /// assert_eq!(SciDecimal::new(8174036, 0).to_string_smart(), "8.174036e6");
+    /// // 81700 with 3 sf
+    /// assert_eq!(SciDecimal::new(817, 2) => "8.17e4"
+    /// // 81700 with 5 sf
+    /// assert_eq!(SciDecimal::new(81700, 0) => "81700"
+    /// ```
+    pub fn to_string_smart(&self) -> String {
         if self.precision() <= 0
             && self.precision() >= -5
             && self.precision_most_significant_fig() <= 4
         {
-            write!(f, "{}", self.to_plain_string())
+            self.to_string()
         // Otherwise, use scientific notation
         } else {
-            write!(f, "{}", self.to_scientific_string())
+            self.to_scientific()
         }
     }
 }
@@ -127,7 +146,7 @@ impl FromStr for SciDecimal {
 
     /// Parses a string and attempts to create a corresponding `SciDecimal`.
     ///
-    /// A correctly formed string will *always* return a `SciDecimal`:
+    /// A correctly formed string, whether in will *always* return a `SciDecimal`:
     ///
     /// - Excess precision is rounded to 16 significant figures (according to
     ///   [`RoundingMode::HalfEven`]).
@@ -234,12 +253,9 @@ mod tests {
 
     #[test]
     fn to_plain_string() {
+        assert_eq!(SciDecimal::from_str("25e4").unwrap().to_string(), "250000");
         assert_eq!(
-            SciDecimal::from_str("25e4").unwrap().to_plain_string(),
-            "250000"
-        );
-        assert_eq!(
-            SciDecimal::from_str("25(2)e4").unwrap().to_plain_string(),
+            SciDecimal::from_str("25(2)e4").unwrap().to_string(),
             "250000(20000)"
         );
     }
