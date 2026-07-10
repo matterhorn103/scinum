@@ -81,7 +81,7 @@ impl SciDecimal {
 
     /// The lowest supported number.
     pub const MIN: SciDecimal = SciDecimal {
-        significand: u64::MAX,
+        significand: SciDecimal::MAX_SIGNIFICAND,
         uncertainty: 0,
         exponent: 0,
         uncertainty_scale: 0,
@@ -99,74 +99,74 @@ impl SciDecimal {
 
     /// The highest supported number.
     pub const MAX: SciDecimal = SciDecimal {
+        significand: SciDecimal::MAX_SIGNIFICAND,
         uncertainty: 0,
+        exponent: i16::MAX,
         uncertainty_scale: 0,
         flags: 0x00,
-        exponent: i16::MAX,
-        significand: u64::MAX,
     };
 
     /// The `SciDecimal` representation of `NaN`, "not a number".
     pub const NAN: SciDecimal = SciDecimal {
+        significand: 0,
         uncertainty: 0,
+        exponent: 0,
         uncertainty_scale: 0,
         flags: 0xFF,
-        exponent: 0,
-        significand: 0,
     };
 
     /// The `SciDecimal` representation of positive infinity.
     pub const INFINITY: SciDecimal = SciDecimal {
+        significand: 0,
         uncertainty: 0,
+        exponent: 0,
         uncertainty_scale: 0,
         flags: 0x70,
-        exponent: 0,
-        significand: 0,
     };
 
     /// The `SciDecimal` representation of negative infinity.
     pub const NEG_INFINITY: SciDecimal = SciDecimal {
+        significand: 0,
         uncertainty: 0,
+        exponent: 0,
         uncertainty_scale: 0,
         flags: 0x71,
-        exponent: 0,
-        significand: 0,
     };
 
     /// The `SciDecimal` representation of (positive) zero.
     pub const ZERO: SciDecimal = SciDecimal {
+        significand: 0,
         uncertainty: 0,
+        exponent: 0,
         uncertainty_scale: 0,
         flags: 0x00,
-        exponent: 0,
-        significand: 0,
     };
 
     /// The `SciDecimal` representation of negative zero.
     pub const NEG_ZERO: SciDecimal = SciDecimal {
+        significand: 0,
         uncertainty: 0,
+        exponent: 0,
         uncertainty_scale: 0,
         flags: 0x01,
-        exponent: 0,
-        significand: 0,
     };
 
     /// The `SciDecimal` representation of one.
     pub const ONE: SciDecimal = SciDecimal {
+        significand: 1,
         uncertainty: 0,
+        exponent: 0,
         uncertainty_scale: 0,
         flags: 0x00,
-        exponent: 0,
-        significand: 1,
     };
 
     /// The `SciDecimal` representation of minus one.
     pub const NEG_ONE: SciDecimal = SciDecimal {
+        significand: 1,
         uncertainty: 0,
+        exponent: 0,
         uncertainty_scale: 0,
         flags: 0x01,
-        exponent: 0,
-        significand: 1,
     };
 }
 
