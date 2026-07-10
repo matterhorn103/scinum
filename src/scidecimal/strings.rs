@@ -86,13 +86,13 @@ impl SciDecimal {
         } else {
             format!("({})", self.uncertainty)
         };
-        let (int, zeros, frac, _, exp) = self.scientific_parts().unwrap();
-        let zeros = "0".repeat(zeros.into());
+        let (int, frac, _, places, exp) = self.to_scientific_parts().unwrap();
         // Fractional part might not have any places at all (e.g. 2e6)
         if frac == 0 {
             format!("{int}{uncertainty}e{exp}")
         } else {
-            format!("{int}.{zeros}{frac}{uncertainty}e{exp}")
+            let p = places as usize;
+            format!("{int}.{frac:p$}{uncertainty}e{exp}")
         }
     }
 }
@@ -228,17 +228,9 @@ macro_rules! sci {
     };
 }
 
-/*
 #[cfg(test)]
 mod tests {
     use super::*;
-
-
-    //#[test]
-    //fn debug() {
-    //    let n = SciDecimal::new_with_uncertainty(20, 2, 0);
-    //    assert_eq!(format!("{n:?}"), "SciDecimal { number: 20, uncertainty: 2 }");
-    //}
 
     #[test]
     fn to_plain_string() {
@@ -251,7 +243,8 @@ mod tests {
             "250000(20000)"
         );
     }
-
+}
+/*
     #[test]
     fn display() {
         // NaN and infinity should match the native `f64`
