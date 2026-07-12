@@ -152,6 +152,10 @@ Licensed under either of:
 
 at your option.
 
+### Third-party licenses
+
+The `decTest` test suite of IBM's General Decimal Arithmetic is © IBM and is covered by the ICU license.
+
 ### Contribution
 
 Unless you explicitly state otherwise, any contribution intentionally submitted

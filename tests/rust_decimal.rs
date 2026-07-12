@@ -1,5 +1,5 @@
-// Tests adapted to the `SciDecimal` API from the `rust_decimal` test suite.
-// Tests are those as of commit edc6a798819d979e37e9bff824eb76978db79d55.
+//! Tests adapted to the `SciDecimal` API from the `rust_decimal` test suite.
+//! Tests are those as of commit edc6a798819d979e37e9bff824eb76978db79d55.
 
 use std::str::FromStr;
 
