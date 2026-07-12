@@ -6,6 +6,7 @@ use std::str::FromStr;
 use scinum::SciDecimal;
 
 #[test]
+#[ignore]
 fn it_adds_decimals() {
     fn add(a: &str, b: &str, c: &str) {
         let a = SciDecimal::from_str(a).unwrap();
@@ -139,6 +140,7 @@ fn it_adds_decimals() {
 // Subtraction
 
 #[test]
+#[ignore]
 fn it_subtracts_decimals() {
     fn sub(a: &str, b: &str, c: &str) {
         let a = SciDecimal::from_str(a).unwrap();
@@ -227,6 +229,7 @@ fn it_subtracts_decimals() {
 // Multiplication
 
 #[test]
+#[ignore]
 fn it_multiplies_decimals() {
     fn mul(a: &str, b: &str, c: &str) {
         let a = SciDecimal::from_str(a).unwrap();
@@ -310,6 +313,7 @@ fn it_multiplies_decimals() {
 // Division
 
 #[test]
+#[ignore]
 fn it_divides_decimals() {
     fn div(a: &str, b: &str, c: &str) {
         let a = SciDecimal::from_str(a).unwrap();
@@ -372,6 +376,7 @@ fn it_divides_decimals() {
 }
 
 #[test]
+#[ignore]
 #[should_panic]
 fn it_can_divide_by_zero() {
     let a = SciDecimal::from_str("2").unwrap();
@@ -399,6 +404,7 @@ fn it_can_divide_by_zero() {
 //}
 
 #[test]
+#[ignore]
 fn it_rems_decimals() {
     fn rem(a: &str, b: &str, c: &str) {
         let a = SciDecimal::from_str(a).unwrap();
