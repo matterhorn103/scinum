@@ -22,6 +22,10 @@ serde_with = "3.16.1"
 version = "1.39.0"
 features = ["maths"]
 
+[dependencies.lexical]
+version = "7.0.5"
+features = ["format"]
+
 [dev-dependencies]
 itertools = "0.15"
 proptest = "1.11.0"

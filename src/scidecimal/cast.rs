@@ -175,7 +175,7 @@ impl SciCast<Decimal> for SciDecimal {
             // Saturate to lowest possible value
             Decimal::MIN
         } else {
-            Decimal::from_scientific_lossy(&self.number().to_scientific())
+            Decimal::from_scientific_lossy(&self.number().to_scientific_string())
                 .expect("All other values should be representable by rust_decimal::Decimal")
         }
     }
@@ -193,7 +193,7 @@ impl CheckedSciCast<Decimal> for SciDecimal {
             None
         } else {
             Some(
-                Decimal::from_scientific_lossy(&self.number().to_scientific())
+                Decimal::from_scientific_lossy(&self.number().to_scientific_string())
                     .expect("All other values should be representable by rust_decimal::Decimal"),
             )
         }
