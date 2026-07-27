@@ -160,6 +160,7 @@ pub(crate) fn parse_decimal_19_places(s: &mut &[u8]) -> Result<(u64, i16), SciNu
             }
         }
     }
+    dbg!(&int_digits);
     let int: u64 = if !int_digits.is_empty() {
         lexical::parse(int_digits).expect("Already checked each character explicitly")
     } else {
