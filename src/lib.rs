@@ -125,6 +125,7 @@
 
 mod error;
 mod integer;
+mod parse;
 mod rounding;
 mod scicast;
 mod scinum;

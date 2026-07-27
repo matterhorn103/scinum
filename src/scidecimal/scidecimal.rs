@@ -46,6 +46,11 @@ pub struct SciDecimal {
     /// so as to match the fact that when the number is `NaN` or ∞ the uncertainty is
     /// defined as being `NaN`.
     ///
+    /// While bits 6 and 4 do *not* function as flags for the number/uncertainty being
+    /// an infinity (because a `NaN` is not infinite but would have them set to 1), they
+    /// do function as flags for the number/uncertainty being *finite* (in an inverted
+    /// sense i.e. if bit 6 is 0, the number is finite, if it's 1, it's not).
+    ///
     /// As both finite numbers and ∞ can be negative, `flags` will have one of
     /// 24 values, of which 16 are just different `NaN`s:
     ///
@@ -323,8 +328,9 @@ impl SciDecimal {
         self.flags & 0b1000_0000 != 0
     }
 
-    /// Returns the infinity bit; `true` means the `SciDecimal` is either +∞, −∞, or
-    /// a `NaN`.
+    /// Returns the infinity bit; `true` may mean the `SciDecimal` is +∞ or −∞, but it
+    /// may also be a `NaN`; on the other hand, `false` means the `SciDecimal` is
+    /// definitely finite.
     #[inline]
     pub(crate) fn inf_bit(&self) -> bool {
         self.flags & 0b0100_0000 != 0
@@ -388,13 +394,23 @@ impl SciDecimal {
         self.exponent
     }
 
-    /// Returns the integer part, number of fractional leading zeros,
-    /// fractional part, uncertainty, and exponent of the number when represented
-    /// with normalized notation i.e. with 10 > _m_ >= 1.
+    /// Returns a tuple of `(integer, fraction, uncertainty, places, exponent)`, that
+    /// is, the integer part _i_, fractional part _f_, uncertainty _u_, number of
+    /// decimal places _p_, and the exponent _n_ of the number when expressed as
+    /// _x_ = (_i_ + (_f_ × 10<sup>−_p_</sup>) ± (_u_ × 10<sup>−_p_</sup>)) × 10<sup>_n_</sup>.
     ///
-    /// Corresponds to _i_, _z_, _f_, _u_, _n_ when the number is notated as
-    /// `ii.{zeros}fff(uu)` × 10<sup>`nn`</sup>, where `z` is the number of leading
-    /// zeros in the fractional part.
+    /// This corresponds to a written representation of the number in scientific
+    /// notation. For example, (1.048 ± 0.006) × 10<sup>6</sup>, also written as
+    /// 1.048(6) × 10<sup>6</sup>, would correspond to _i_ = 1, _f_ = 48, _u_ = 6,
+    ///  _p_ = 3, _n_ = 6; `places` (_p_) is thus the number of decimal places of the
+    /// number as written.
+    ///
+    /// The values are chosen such that the number is represented in **normalized
+    /// notation** i.e. so that 10 > _i_ >= 1.
+    ///
+    /// Returns the values as a tuple wrapped in `Some()`, or returns `None` if the
+    /// number cannot be expressed in this format (because either the number or the
+    /// uncertainty is non-finite).
     ///
     /// # Special values
     ///
@@ -404,33 +420,27 @@ impl SciDecimal {
     /// - ±0 → `Some((0, 0, 0, 0, 0))`
     ///
     /// - ±∞ and `NaN` → `None`
-    pub fn scientific_parts(&self) -> Option<(i8, u8, u64, u32, i16)> {
+    pub fn to_scientific_parts(&self) -> Option<(i32, u64, u32, u8, i16)> {
         if self.is_zero() {
             return Some((0, 0, 0, 0, 0));
         };
-        if !self.is_finite() {
-            todo!("Special values are not yet handled correctly by this method!")
+        if !self.is_finite() | !self.uncertainty_is_finite() {
+            return None;
         }
-        let figs = self.sf() as u32;
-        let int_unsigned = self.significand / 10_u64.pow(figs - 1); // First digit
-        let int = if self.sign_bit() {
-            -(int_unsigned as i8)
+        // We always return the normalized notation with 1 sf in the integer part,
+        // so p is always simply one less than the total number of sf
+        let places = self.sf() - 1;
+        let divisor = 10_u64.pow(places as u32);
+        let int_unsigned = self.significand / divisor; // First digit
+        let fraction = self.significand % divisor; // Remaining digits
+        let integer = if self.sign_bit() {
+            -(int_unsigned as i32)
         } else {
-            int_unsigned as i8
+            int_unsigned as i32
         };
-        let frac = self.significand % 10_u64.pow(figs - 1);
-        // Work out how many zeros have been dropped, if any
-        let figs_in_frac = frac.checked_ilog10().map_or(0, |x| x + 1);
-        let zeros = (figs - 1 - figs_in_frac) as u8; // 1 is for integer digit
-        let uncert = self.uncertainty;
-        let exp = self.exponent + (figs as i16 - 1);
-        // For example:
-        // 1.23e2 = 123 is stored as (123, 0)       =>  2 =  0 + (3 - 1)
-        // 4.5e6 = 4_500_000 is stored as (45, 5)   =>  6 =  5 + (2 - 1)
-        // 4.5e-3 = 0.0045 is stored as (45, -4)    => -3 = -4 + (2 - 1)
-        // 4.51e-3 = 0.00451 is stored as (451, -5) => -3 = -5 + (3 - 1)
-        // 4.50e-3 = 0.00450 is stored as (450, -5) => -3 = -5 + (3 - 1)
-        Some((int, zeros, frac, uncert, exp))
+        let uncertainty = self.uncertainty;
+        let exponent = self.exponent + (places as i16);
+        Some((integer, fraction, uncertainty, places, exponent))
     }
 }
 
@@ -455,7 +465,8 @@ impl SciDecimal {
     /// Returns `true` if the number is neither infinite nor `NaN`.
     #[inline]
     pub fn is_finite(self) -> bool {
-        self.flags & 0b1100_0000 == 0
+        // It is an invariant that we make sure to uphold that any `NaN` has bit 6 = 1
+        self.flags & 0b0100_0000 == 0
     }
 
     /// Returns `true` if the number is neither zero, infinite, or `NaN`.
@@ -467,26 +478,25 @@ impl SciDecimal {
     /// Returns `true` if the uncertainty is `NaN` and `false` otherwise.
     #[inline]
     pub fn uncertainty_is_nan(self) -> bool {
-        // The NaN/inf flags of the number as a whole override the uncertainty's flags
-        // We therefore have to compare against three bits - if any are 1, the
-        // uncertainty is NaN, even if the uncertainty NaN bit hasn't been set properly
-        self.flags & 0b1110_0000 != 0
+        // Any `NaN` or inf will have set this bit to 1, because it's an invariant we
+        // uphold
+        self.flags & 0b0010_0000 != 0
     }
 
     /// Returns `true` if the uncertainty is (positive) infinity and `false` otherwise.
     #[inline]
     pub fn uncertainty_is_infinite(self) -> bool {
-        // The NaN flag overrides the infinity flag, and the NaN and inf flags of the
-        // number as a whole override the uncertainty's flags
-        // We therefore have to compare against four bits - if any except bit 4 are 1,
-        // the uncertainty is not infinite, it's NaN
-        self.flags & 0b1111_0000 == 0b0001_0000
+        // If the number is `NaN` or inf these bits will have been set to 11, because
+        // it's an invariant we uphold
+        self.flags & 0b0011_0000 == 0b0001_0000
     }
 
     /// Returns `true` if the uncertainty is neither infinite nor `NaN`.
     #[inline]
     pub fn uncertainty_is_finite(self) -> bool {
-        self.flags & 0b1111_0000 == 0
+        // It is an invariant that we make sure to uphold that any `NaN` or inf, and
+        // anything with a `NaN` uncertainty, has bit 4 = 1
+        self.flags & 0b0001_0000 == 0
     }
 
     /// Returns `true` if the uncertainty is neither zero, infinite, or `NaN`.
@@ -678,12 +688,20 @@ impl SciNum for SciDecimal {
 
     #[inline]
     fn number(&self) -> Self {
-        Self {
-            uncertainty: 0,
-            uncertainty_scale: 0,
-            // Set uncertainty inf/NaN flags to same as number itself
-            flags: (self.flags & !0x30) | ((self.flags & 0xC0) >> 2),
-            ..*self
+        if self.is_finite() {
+            Self {
+                uncertainty: 0,
+                uncertainty_scale: 0,
+                ..*self
+            }
+        } else {
+            // Set uncertainty NaN/inf flags to 1 to uphold invariant
+            Self {
+                uncertainty: 0,
+                uncertainty_scale: 0,
+                flags: self.flags | 0b0011_0000,
+                ..*self
+            }
         }
     }
 
@@ -1476,6 +1494,55 @@ mod tests {
     }
 
     #[test]
+    fn to_scientific_parts() {
+        // Check round trip for all those examples above
+        // Note that as the values returned are for the normalized representation,
+        // the output may be different to the input if the input was not normalized
+        let n = SciDecimal::from_scientific_parts(3, 0, 0, 0, 0); // 3
+        assert_eq!(n.to_scientific_parts(), Some((3, 0, 0, 0, 0)));
+        let n = SciDecimal::from_scientific_parts(-3, 0, 0, 0, 0); // -3
+        assert_eq!(n.to_scientific_parts(), Some((-3, 0, 0, 0, 0)));
+        let n = SciDecimal::from_scientific_parts(3, 0, 0, 1, 0); // 3.0
+        assert_eq!(n.to_scientific_parts(), Some((3, 0, 0, 1, 0)));
+        let n = SciDecimal::from_scientific_parts(3, 00, 0, 2, 0); // 3.00
+        assert_eq!(n.to_scientific_parts(), Some((3, 0, 0, 2, 0)));
+        let n = SciDecimal::from_scientific_parts(6, 72, 0, 2, 0); // 6.72e0
+        assert_eq!(n.to_scientific_parts(), Some((6, 72, 0, 2, 0)));
+        // Specifying `places` as a number less than the actual number of figures in
+        // `fraction` leads to surprising, but entirely predictable results
+        let n = SciDecimal::from_scientific_parts(6, 72, 0, 0, 0); // (6+72)e0 = 78e0
+        assert_eq!(n.to_scientific_parts(), Some((7, 8, 0, 1, 1)));
+        let n = SciDecimal::from_scientific_parts(-2, 036, 0, 3, 5); // -2.036e5
+        assert_eq!(n.to_scientific_parts(), Some((-2, 036, 0, 3, 5)));
+        let n = SciDecimal::from_scientific_parts(2, 161, 9, 3, -7); // 2.161(9)e-7
+        assert_eq!(n.to_scientific_parts(), Some((2, 161, 9, 3, -7)));
+        let n = SciDecimal::from_scientific_parts(2, 1613, 92, 4, -7); // 2.1613(92)e-7
+        assert_eq!(n.to_scientific_parts(), Some((2, 1613, 92, 4, -7)));
+        // Special values should just return `None`
+        assert!(SciDecimal::NAN.to_scientific_parts().is_none());
+        assert!(SciDecimal::INFINITY.to_scientific_parts().is_none());
+        assert!(SciDecimal::NEG_INFINITY.to_scientific_parts().is_none());
+        // Including when the uncertainty is non-finite, as no sensible value can be
+        // returned for it
+        let nan_uncert = SciDecimal {
+            significand: 1234,
+            uncertainty: 0,
+            exponent: -6,
+            uncertainty_scale: 0,
+            flags: 0b0011_0000,
+        };
+        assert!(nan_uncert.to_scientific_parts().is_none());
+        let inf_uncert = SciDecimal {
+            significand: 1234,
+            uncertainty: 0,
+            exponent: -6,
+            uncertainty_scale: 0,
+            flags: 0b0001_0000,
+        };
+        assert!(inf_uncert.to_scientific_parts().is_none());
+    }
+
+    #[test]
     fn is_nan() {
         // Canonical NaN
         assert!(SciDecimal::NAN.nan_bit());
@@ -1529,50 +1596,6 @@ mod tests {
             };
             assert!(!n.nan_bit());
             assert!(!n.is_nan());
-        }
-    }
-
-    proptest! {
-        #[test]
-        fn is_always_nan(
-            sign: bool,
-            significand: u64,
-            uncertainty: u32,
-            exponent: i16,
-            uncertainty_scale: i8,
-            flags in 0x80_u8..=0xFF_u8, // Bit 7 always 1
-        ) {
-            // Whether the number is NaN or not depends only on the flags field and is
-            // independent of the values of everything else
-            let n = SciDecimal {
-                significand,
-                uncertainty,
-                exponent,
-                uncertainty_scale,
-                flags: (flags & 0xFE) | sign as u8,
-            };
-            prop_assert!(n.nan_bit());
-            prop_assert!(n.is_nan());
-        }
-
-        #[test]
-        fn is_never_nan(
-            sign: bool,
-            significand: u64,
-            uncertainty: u32,
-            exponent: i16,
-            uncertainty_scale: i8,
-            flags in 0x00_u8..=0x7F_u8, // Bit 7 always 0
-        ) {
-            let n = SciDecimal {
-                significand,
-                uncertainty,
-                exponent,
-                uncertainty_scale,
-                flags: (flags & 0xFE) | sign as u8,
-            };
-            prop_assert!(!n.nan_bit());
-            prop_assert!(!n.is_nan());
         }
     }
 
@@ -1664,72 +1687,6 @@ mod tests {
         }
     }
 
-    proptest! {
-        #[test]
-        fn is_always_inf(
-            sign: bool,
-            significand: u64,
-            uncertainty: u32,
-            exponent: i16,
-            uncertainty_scale: i8,
-            flags in 0x40_u8..=0x7F_u8, // Bit 6 always 1
-        ) {
-            // Whether the number is inf or not depends only on the flags field and is
-            // independent of the values of everything else
-            // None of these flags values are NaN
-            let n = SciDecimal {
-                significand,
-                uncertainty,
-                exponent,
-                uncertainty_scale,
-                flags: (flags & 0xFE) | sign as u8,
-            };
-            prop_assert!(n.inf_bit());
-            prop_assert!(n.is_infinite());
-        }
-
-        #[test]
-        fn finite_is_never_inf(
-            sign: bool,
-            significand: u64,
-            uncertainty: u32,
-            exponent: i16,
-            uncertainty_scale: i8,
-            flags in 0x00_u8..=0x3F_u8, // Bits 7 & 6 always 0
-        ) {
-            let n = SciDecimal {
-                significand,
-                uncertainty,
-                exponent,
-                uncertainty_scale,
-                flags: (flags & 0xFE) | sign as u8,
-            };
-            prop_assert!(!n.inf_bit());
-            prop_assert!(!n.is_infinite());
-        }
-
-        #[test]
-        fn nan_is_never_inf(
-            sign: bool,
-            significand: u64,
-            uncertainty: u32,
-            exponent: i16,
-            uncertainty_scale: i8,
-            flags in 0x80_u8..=0xFF_u8, // Bit 7 always 1
-        ) {
-            let n = SciDecimal {
-                significand,
-                uncertainty,
-                exponent,
-                uncertainty_scale,
-                flags: (flags & 0xFE) | sign as u8,
-            };
-            // Don't check inf_bit() because the point is that sometimes it will be 0,
-            // sometimes 1, but should still never be infinite
-            prop_assert!(!n.is_infinite());
-        }
-    }
-
     #[test]
     fn is_finite() {
         // NaN, inf are not finite
@@ -1797,51 +1754,6 @@ mod tests {
             flags: 0b0011_0000,
         };
         assert!(n.is_finite());
-    }
-
-    proptest! {
-        #[test]
-        fn is_always_finite(
-            sign: bool,
-            significand: u64,
-            uncertainty: u32,
-            exponent: i16,
-            uncertainty_scale: i8,
-            flags in 0x00_u8..=0x3F_u8, // Bits 7 & 6 always 0
-        ) {
-            // Whether the number is finite or not depends only on the flags field and is
-            // independent of the values of everything else
-            // None of these flags values are NaN or inf
-            let n = SciDecimal {
-                significand,
-                uncertainty,
-                exponent,
-                uncertainty_scale,
-                flags: (flags & 0xFE) | sign as u8,
-            };
-            prop_assert!(!n.nan_bit() & !n.inf_bit());
-            prop_assert!(n.is_finite());
-        }
-
-        #[test]
-        fn is_never_finite(
-            sign: bool,
-            significand: u64,
-            uncertainty: u32,
-            exponent: i16,
-            uncertainty_scale: i8,
-            flags in 0x40_u8..=0xFF_u8, // One of bits 7 & 6 always 1
-        ) {
-            let n = SciDecimal {
-                significand,
-                uncertainty,
-                exponent,
-                uncertainty_scale,
-                flags: (flags & 0xFE) | sign as u8,
-            };
-            prop_assert!(n.nan_bit() | n.inf_bit());
-            prop_assert!(!n.is_finite());
-        }
     }
 
     #[test]
@@ -1914,63 +1826,413 @@ mod tests {
         assert!(n.is_normal());
     }
 
+    #[test]
+    fn uncert_is_finite() {
+        // Exact numbers
+        let n = SciDecimal {
+            significand: 1234,
+            uncertainty: 0,
+            exponent: -6,
+            uncertainty_scale: 0,
+            flags: 0x00,
+        };
+        assert!(n.uncertainty_is_finite());
+        let n = SciDecimal::new(42, 0);
+        assert!(n.uncertainty_is_finite());
+        // Numbers with uncertainty
+        let n = SciDecimal {
+            significand: 1234,
+            uncertainty: 7,
+            exponent: -6,
+            uncertainty_scale: 0,
+            flags: 0x01,
+        };
+        assert!(n.uncertainty_is_finite());
+        let n = SciDecimal::new_with_uncertainty(42, 7, 0);
+        assert!(n.uncertainty_is_finite());
+    }
+
+    #[test]
+    fn uncert_is_normal() {
+        // Exact numbers
+        let n = SciDecimal {
+            significand: 1234,
+            uncertainty: 0,
+            exponent: -6,
+            uncertainty_scale: 0,
+            flags: 0x00,
+        };
+        assert!(!n.uncertainty_is_normal());
+        let n = SciDecimal::new(42, 0);
+        assert!(!n.uncertainty_is_normal());
+        // Numbers with uncertainty
+        let n = SciDecimal {
+            significand: 1234,
+            uncertainty: 7,
+            exponent: -6,
+            uncertainty_scale: 0,
+            flags: 0x01,
+        };
+        assert!(n.uncertainty_is_normal());
+        let n = SciDecimal::new_with_uncertainty(42, 7, 0);
+        assert!(n.uncertainty_is_normal());
+    }
+
     proptest! {
         #[test]
-        fn is_always_normal(
-            sign: bool,
-            significand in 1_u64..=u64::MAX, // Never 0
+        fn is_nan_proptest(
+            significand in 1_u64..=u64::MAX, // Always non-zero, we set zero manually
             uncertainty: u32,
             exponent: i16,
             uncertainty_scale: i8,
-            flags in 0x00_u8..=0x3F_u8, // Bits 7 & 6 always 0
+            flags: u8,
         ) {
-            // None of these flags values are NaN or inf
-            let n = SciDecimal {
+            // Just create and test a NaN, an infinity, a zero, and a finite non-zero number
+            // from the same inputs
+            let nan = SciDecimal {
                 significand,
                 uncertainty,
                 exponent,
                 uncertainty_scale,
-                flags: (flags & 0xFE) | sign as u8,
+                flags: flags | 0b1111_0000, // Bits 7–4 definitely 1
             };
-            prop_assert!(n.is_normal());
-        }
-
-        #[test]
-        fn nonfinite_is_never_normal(
-            sign: bool,
-            significand: u64,
-            uncertainty: u32,
-            exponent: i16,
-            uncertainty_scale: i8,
-            flags in 0x40_u8..=0xFF_u8, // One of bits 7 & 6 always 1
-        ) {
-            let n = SciDecimal {
+            let inf = SciDecimal {
                 significand,
                 uncertainty,
                 exponent,
                 uncertainty_scale,
-                flags: (flags & 0xFE) | sign as u8,
+                flags: (flags & !0b1000_0000) | 0b0111_0000, // Bit 7 definitely 0, bits 6–4 definitely 1
             };
-            prop_assert!(!n.is_normal());
-        }
-
-        #[test]
-        fn zero_is_never_normal(
-            sign: bool,
-            uncertainty: u32,
-            exponent: i16,
-            uncertainty_scale: i8,
-            flags in 0x00_u8..=0x3F_u8, // Bits 7 & 6 always 0
-        ) {
-            // None of these flags values are NaN or inf
-            let n = SciDecimal {
+            let zer = SciDecimal {
                 significand: 0,
                 uncertainty,
                 exponent,
                 uncertainty_scale,
-                flags: (flags & 0xFE) | sign as u8,
+                flags: flags & !0b1100_0000, // Bits 7 & 6 definitely 0
             };
-            prop_assert!(!n.is_normal());
+            let fin = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: flags & !0b1100_0000, // Bits 7 & 6 definitely 0
+            };
+            prop_assert!(nan.is_nan());
+            prop_assert!(!inf.is_nan());
+            prop_assert!(!zer.is_nan());
+            prop_assert!(!fin.is_nan());
+        }
+
+        #[test]
+        fn is_inf_proptest(
+            significand in 1_u64..=u64::MAX, // Always non-zero, we set zero manually
+            uncertainty: u32,
+            exponent: i16,
+            uncertainty_scale: i8,
+            flags: u8,
+        ) {
+            // Just create and test a NaN, an infinity, a zero, and a finite non-zero number
+            // from the same inputs
+            let nan = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: flags | 0b1111_0000, // Bits 7–4 definitely 1
+            };
+            let inf = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: (flags & !0b1000_0000) | 0b0111_0000, // Bit 7 definitely 0, bits 6–4 definitely 1
+            };
+            let zer = SciDecimal {
+                significand: 0,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: flags & !0b1100_0000, // Bits 7 & 6 definitely 0
+            };
+            let fin = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: flags & !0b1100_0000, // Bits 7 & 6 definitely 0
+            };
+            prop_assert!(!nan.is_infinite());
+            prop_assert!(inf.is_infinite());
+            prop_assert!(!zer.is_infinite());
+            prop_assert!(!fin.is_infinite());
+        }
+
+        #[test]
+        fn is_finite_proptest(
+            significand in 1_u64..=u64::MAX, // Always non-zero, we set zero manually
+            uncertainty: u32,
+            exponent: i16,
+            uncertainty_scale: i8,
+            flags: u8,
+        ) {
+            // Just create and test a NaN, an infinity, a zero, and a finite non-zero number
+            // from the same inputs
+            let nan = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: flags | 0b1111_0000, // Bits 7–4 definitely 1
+            };
+            let inf = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: (flags & !0b1000_0000) | 0b0111_0000, // Bit 7 definitely 0, bits 6–4 definitely 1
+            };
+            let zer = SciDecimal {
+                significand: 0,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: flags & !0b1100_0000, // Bits 7 & 6 definitely 0
+            };
+            let fin = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: flags & !0b1100_0000, // Bits 7 & 6 definitely 0
+            };
+            prop_assert!(!nan.is_finite());
+            prop_assert!(!inf.is_finite());
+            prop_assert!(zer.is_finite());
+            prop_assert!(fin.is_finite());
+        }
+
+        #[test]
+        fn is_normal_proptest(
+            significand in 1_u64..=u64::MAX, // Always non-zero, we set zero manually
+            uncertainty: u32,
+            exponent: i16,
+            uncertainty_scale: i8,
+            flags: u8,
+        ) {
+            // Just create and test a NaN, an infinity, a zero, and a finite non-zero number
+            // from the same inputs
+            let nan = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: flags | 0b1111_0000, // Bits 7–4 definitely 1
+            };
+            let inf = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: (flags & !0b1000_0000) | 0b0111_0000, // Bit 7 definitely 0, bits 6–4 definitely 1
+            };
+            let zer = SciDecimal {
+                significand: 0,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: flags & !0b1100_0000, // Bits 7 & 6 definitely 0
+            };
+            let fin = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: flags & !0b1100_0000, // Bits 7 & 6 definitely 0
+            };
+            prop_assert!(!nan.is_normal());
+            prop_assert!(!inf.is_normal());
+            prop_assert!(!zer.is_normal());
+            prop_assert!(fin.is_normal());
+        }
+
+        #[test]
+        fn uncert_is_nan_proptest(
+            significand: u64,
+            uncertainty in 1_u32..=u32::MAX, // Non-zero
+            exponent: i16,
+            uncertainty_scale: i8,
+            flags: u8,
+        ) {
+            // Just create and test a number with a NaN uncertainty, an infinity
+            // uncertainty, a zero uncertainty, and a finite non-zero uncertainty
+            // from the same input numbers
+            let nan_uncert = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: flags | 0b0011_0000, // Bits 5 & 4 definitely 1
+            };
+            let inf_uncert = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: (flags & !0b0010_0000) | 0b0001_0000, // Bit 5 definitely 0, bit 4 definitely 1
+            };
+            let zer_uncert = SciDecimal {
+                significand,
+                uncertainty: 0,
+                exponent,
+                uncertainty_scale,
+                flags: flags & !0b0011_0000, // Bits 5 & 4 definitely 0
+            };
+            let fin_uncert = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: flags & !0b0011_0000, // Bits 5 & 4 definitely 0
+            };
+            prop_assert!(nan_uncert.uncertainty_is_nan());
+            prop_assert!(!inf_uncert.uncertainty_is_nan());
+            prop_assert!(!zer_uncert.uncertainty_is_nan());
+            prop_assert!(!fin_uncert.uncertainty_is_nan());
+        }
+
+        #[test]
+        fn uncert_is_inf_proptest(
+            significand: u64,
+            uncertainty in 1_u32..=u32::MAX, // Non-zero
+            exponent: i16,
+            uncertainty_scale: i8,
+            flags: u8,
+        ) {
+            // Just create and test a number with a NaN uncertainty, an infinity
+            // uncertainty, a zero uncertainty, and a finite non-zero uncertainty
+            // from the same input numbers
+            let nan_uncert = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: flags | 0b0011_0000, // Bits 5 & 4 definitely 1
+            };
+            let inf_uncert = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: (flags & !0b0010_0000) | 0b0001_0000, // Bit 5 definitely 0, bit 4 definitely 1
+            };
+            let zer_uncert = SciDecimal {
+                significand,
+                uncertainty: 0,
+                exponent,
+                uncertainty_scale,
+                flags: flags & !0b0011_0000, // Bits 5 & 4 definitely 0
+            };
+            let fin_uncert = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: flags & !0b0011_0000, // Bits 5 & 4 definitely 0
+            };
+            prop_assert!(!nan_uncert.uncertainty_is_infinite());
+            prop_assert!(inf_uncert.uncertainty_is_infinite());
+            prop_assert!(!zer_uncert.uncertainty_is_infinite());
+            prop_assert!(!fin_uncert.uncertainty_is_infinite());
+        }
+
+        #[test]
+        fn uncert_is_finite_proptest(
+            significand: u64,
+            uncertainty in 1_u32..=u32::MAX, // Non-zero
+            exponent: i16,
+            uncertainty_scale: i8,
+            flags: u8,
+        ) {
+            // Just create and test a number with a NaN uncertainty, an infinity
+            // uncertainty, a zero uncertainty, and a finite non-zero uncertainty
+            // from the same input numbers
+            let nan_uncert = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: flags | 0b0011_0000, // Bits 5 & 4 definitely 1
+            };
+            let inf_uncert = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: (flags & !0b0010_0000) | 0b0001_0000, // Bit 5 definitely 0, bit 4 definitely 1
+            };
+            let zer_uncert = SciDecimal {
+                significand,
+                uncertainty: 0,
+                exponent,
+                uncertainty_scale,
+                flags: flags & !0b0011_0000, // Bits 5 & 4 definitely 0
+            };
+            let fin_uncert = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: flags & !0b0011_0000, // Bits 5 & 4 definitely 0
+            };
+            prop_assert!(!nan_uncert.uncertainty_is_finite());
+            prop_assert!(!inf_uncert.uncertainty_is_finite());
+            prop_assert!(zer_uncert.uncertainty_is_finite());
+            prop_assert!(fin_uncert.uncertainty_is_finite());
+        }
+
+        #[test]
+        fn uncert_is_normal_proptest(
+            significand: u64,
+            uncertainty in 1_u32..=u32::MAX, // Non-zero
+            exponent: i16,
+            uncertainty_scale: i8,
+            flags: u8,
+        ) {
+            // Just create and test a number with a NaN uncertainty, an infinity
+            // uncertainty, a zero uncertainty, and a finite non-zero uncertainty
+            // from the same input numbers
+            let nan_uncert = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: flags | 0b0011_0000, // Bits 5 & 4 definitely 1
+            };
+            let inf_uncert = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: (flags & !0b0010_0000) | 0b0001_0000, // Bit 5 definitely 0, bit 4 definitely 1
+            };
+            let zer_uncert = SciDecimal {
+                significand,
+                uncertainty: 0,
+                exponent,
+                uncertainty_scale,
+                flags: flags & !0b0011_0000, // Bits 5 & 4 definitely 0
+            };
+            let fin_uncert = SciDecimal {
+                significand,
+                uncertainty,
+                exponent,
+                uncertainty_scale,
+                flags: flags & !0b0011_0000, // Bits 5 & 4 definitely 0
+            };
+            prop_assert!(!nan_uncert.uncertainty_is_normal());
+            prop_assert!(!inf_uncert.uncertainty_is_normal());
+            prop_assert!(!zer_uncert.uncertainty_is_normal());
+            prop_assert!(fin_uncert.uncertainty_is_normal());
         }
     }
 }

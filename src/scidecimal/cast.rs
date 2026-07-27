@@ -37,7 +37,7 @@ impl_from_int!(u32);
 
 impl SciCast<SciDecimal> for f64 {
     fn cast(self) -> SciDecimal {
-        self.to_string()
+        lexical::to_string(self)
             .parse()
             .expect("All possible f64 values are representable as a SciDecimal")
     }
@@ -118,17 +118,10 @@ impl SciCast<f64> for SciDecimal {
         } else if self.abs() < f64::MIN_POSITIVE.cast() {
             if self.sign_bit() { -0.0 } else { 0.0 }
         } else {
-            // Otherwise, must be able to fit, if we just drop excess precision
-            // Don't waste time adding trailing zeros if we don't have to
-            let narrowed = if self.sf() > 15 {
-                self.round_sf(15, RoundingMode::HalfEven)
-            } else {
-                self
-            };
-            narrowed
-                .to_string()
-                .parse()
-                .expect("All other possible values should fit into an f64")
+            // As long as we don't write any uncertainties, string output is according to
+            // the IEEE 754 spec and should therefore be correctly understood
+            lexical::parse(self.number().to_string())
+                .expect("All other possible values should parse correctly to a f64")
         }
     }
 }
@@ -271,35 +264,63 @@ impl NumCast for SciDecimal {
         }
     }
 }
-/*
+
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use rust_decimal_macros::dec;
 
-    use crate::sci;
-    use crate::scicast::{CheckedSciCastFrom, SciCastFrom};
+    use crate::scicast::SciCastFrom;
 
     use super::*;
 
     #[test]
     fn cast_f64() {
-        assert_eq!(f64::cast_from(sci!(2.5e5)), 2.5e5_f64);
-        assert_eq!(f64::cast_from(sci!(-2.5e5)), -2.5e5_f64);
+        // Special values first
         assert_eq!(f64::cast_from(SciDecimal::ZERO), 0_f64);
         assert_eq!(f64::cast_from(SciDecimal::NEG_ZERO), -0_f64);
         assert_eq!(f64::cast_from(SciDecimal::INFINITY), f64::INFINITY);
         assert_eq!(f64::cast_from(SciDecimal::NEG_INFINITY), f64::NEG_INFINITY);
         assert!(f64::cast_from(SciDecimal::NAN).is_nan());
+        // Binary floats may not always have the same string representation as
+        // the original due to its inherent limitations as a format, but the
+        // result of the cast should be identical to the f64 obtained either via
+        // a literal or via string parsing in any case
+        let test_cases = [
+            ("2.5e5", 2.5e5_f64),
+            ("-2.5e5", -2.5e5_f64),
+            ("4", 4_f64),
+            ("-3", -3_f64),
+            ("30e3", 30e3_f64),
+            ("30000", 30000_f64),
+            ("0.456", 0.456_f64),
+            ("-0.456", -0.456_f64),
+            ("12.3456", 12.3456_f64),
+            ("-12.3456", -12.3456_f64),
+        ];
+        for (s, f) in test_cases {
+            assert_eq!(
+                f64::cast_from(SciDecimal::from_str(s).unwrap()),
+                f64::from_str(s).unwrap()
+            );
+            assert_eq!(f64::cast_from(SciDecimal::from_str(s).unwrap()), f);
+        }
+        // Check that uncertainty doesn't hinder casting
+        let d = SciDecimal::new_with_uncertainty(123456, 789, -4);
+        assert_eq!(f64::cast_from(d), 12.3456_f64);
     }
 
     #[test]
     fn cast_from_f64() {
-        assert_eq!(SciDecimal::cast_from(2.5e5_f64), sci!(2.5e5));
+        assert_eq!(SciDecimal::cast_from(2.5e5_f64), SciDecimal::new(25, 4));
         assert_eq!(
             SciDecimal::cast_from(f64::MIN_POSITIVE),
-            sci!(2.225073858507201e-308)
+            SciDecimal::from_str("2.225073858507201e-308").unwrap()
         )
     }
+}
+/*
 
     #[test]
     fn cast_decimal() {
