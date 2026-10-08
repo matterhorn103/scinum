@@ -123,6 +123,7 @@
 
 #![allow(mixed_script_confusables)]
 
+mod dec;
 mod error;
 mod integer;
 mod parse;
